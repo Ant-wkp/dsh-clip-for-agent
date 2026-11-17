@@ -1,4 +1,5 @@
 import { open } from 'node:fs/promises'
+import manifest from '../package.json' with { type: 'json' }
 
 export const providerId = 'sensevoice-local'
 const ready = new Set(['ready', 'standby'])
@@ -88,7 +89,7 @@ export async function installOfficialSpeech(manager, hasSpeechService) {
   if (bundle?.availability && bundle.availability !== 'missing') {
     return checkInstall(await manager.setBundleEnabled(voiceBundle, true))
   }
-  return checkInstall(await manager.installBundle(voiceBundle + '@0.2.2-rc.1', { saveExact: true }))
+  return checkInstall(await manager.installBundle(`${voiceBundle}@${manifest.engines.dsh}`, { saveExact: true }))
 }
 
 export async function transcribeClip(speech, recording, language, signal, onTranscribing) {

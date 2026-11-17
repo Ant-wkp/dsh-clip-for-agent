@@ -1,9 +1,9 @@
 {
   "name": "dsh-clip-for-agent",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "description": "reSpeaker Clip BLE audio integration for DeepSeek Harness",
   "type": "module",
-  "os": ["linux"],
+  "os": ["linux", "win32"],
   "cpu": ["x64"],
   "exports": {
     ".": "./src/index.js",
@@ -20,11 +20,11 @@
   ],
   "engines": {
     "node": ">=24.9.0",
-    "dsh": "0.2.2-rc.1"
+    "dsh": "0.2.2-rc.3"
   },
   "dsh": {
     "bundle": {
-      "platforms": ["linux"],
+      "platforms": ["linux", "win32"],
       "patch": "./cordis.patch.yml"
     },
     "client": {
@@ -43,11 +43,11 @@
     "build:client": "node scripts/build-client.js"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-typert-protocol": "0.2.2-rc.1"
+    "@deepseek-ai/dsh-typert-protocol": "0.2.2-rc.3"
   },
   "dependencies": {
-    "@deepseek-ai/dsh-experimental-speech-to-text": "0.2.2-rc.1",
-    "@deepseek-ai/dsh-experimental-speech-to-text-sensevoice": "0.2.2-rc.1"
+    "@deepseek-ai/dsh-experimental-speech-to-text": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-experimental-speech-to-text-sensevoice": "0.2.2-rc.3"
   },
   "repository": {
     "type": "git",

@@ -6,8 +6,12 @@ from contextlib import suppress
 from pathlib import Path
 import sys
 
+if sys.platform == "win32":
+    sys.coinit_flags = 0  # WinRT callbacks need an MTA for this console process.
+
 from clip.exceptions import CommandTimeoutError
 
+from audio import load_opus
 from device import Device
 
 
@@ -26,12 +30,23 @@ async def serve(workspace: Path):
         "downloadAndDecode": device.download,
         "latestRecording": device.latest_recording,
     }
-    loop = asyncio.get_running_loop()
-    stream = asyncio.StreamReader(limit=16384)
-    transport, _ = await loop.connect_read_pipe(lambda: asyncio.StreamReaderProtocol(stream), sys.stdin.buffer)
-    send({"event": "ready", "data": {"protocol": 1}})
+    limit = 16384
+    transport = None
+    if sys.platform == "win32":
+        # Windows asyncio can't attach a StreamReader to this inherited stdin pipe.
+        async def readline():
+            return await asyncio.to_thread(sys.stdin.buffer.readline, limit + 1)
+    else:
+        stream = asyncio.StreamReader(limit=limit)
+        transport, _ = await asyncio.get_running_loop().connect_read_pipe(
+            lambda: asyncio.StreamReaderProtocol(stream), sys.stdin.buffer)
+        readline = stream.readline
     try:
-        while line := await stream.readline():
+        load_opus()
+        send({"event": "ready", "data": {"protocol": 1}})
+        while line := await readline():
+            if len(line) > limit:
+                raise ValueError("Clip worker request is too long")
             request = json.loads(line)
             method = request["method"]
             rid = request["id"]
@@ -47,7 +62,8 @@ async def serve(workspace: Path):
                 code = "link-lost" if isinstance(error, CommandTimeoutError) else getattr(error, "code", None)
                 send({"id": rid, "ok": False, "error": str(error)[:300], "code": code})
     finally:
-        transport.close()
+        if transport is not None:
+            transport.close()
         await device.disconnect()
 
 

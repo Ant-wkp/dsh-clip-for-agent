@@ -16,9 +16,10 @@ export class ClipWorker {
   }
 
   async #start() {
-    if (process.platform !== 'linux' || process.arch !== 'x64') {
-      throw new Error('Clip worker supports Linux x86-64')
+    if (!['linux', 'win32'].includes(process.platform) || process.arch !== 'x64') {
+      throw new Error('Clip worker supports Linux and Windows x86-64')
     }
+    const executable = process.platform === 'win32' ? 'win32-x64/clip-worker.exe' : 'linux-x64/clip-worker'
     const dir = await mkdtemp(join(tmpdir(), 'dsh-clip-'))
     let child
     let lines
@@ -27,7 +28,7 @@ export class ClipWorker {
     const deadline = setTimeout(() => ready.reject(new Error('Clip device process did not start')), 10000)
     try {
       child = this.subprocess.spawn({
-        argv: [fileURLToPath(new URL('../runtime/linux-x64/clip-worker', import.meta.url)), dir],
+        argv: [fileURLToPath(new URL(`../runtime/${executable}`, import.meta.url)), dir],
         cwd: dir,
         stdio: { stdin: 'pipe', stdout: 'pipe', stderr: { maxBytes: 65536 } },
         graceMs: 1500,

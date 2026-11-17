@@ -5,6 +5,7 @@ from dataclasses import asdict
 import json
 from pathlib import Path
 import re
+import sys
 from time import monotonic
 import zlib
 
@@ -18,7 +19,9 @@ from clip.transports.ble import BleTransport
 from clip.validation import chunk_name, session_id
 
 from audio import decode
-from pairing import pair_clip
+
+if sys.platform.startswith("linux"):
+    from pairing import pair_clip
 
 ADDRESS = re.compile(r"(?:[0-9A-F]{2}:){5}[0-9A-F]{2}")
 ACTIVE_STATES = {"RECORDING", "PAUSED"}
@@ -97,6 +100,9 @@ class ClipTransport(BleTransport):
             self._desynchronized = True
 
     async def _subscribe(self, client, characteristic, callback):
+        if not sys.platform.startswith("linux"):
+            await client.start_notify(characteristic, callback)
+            return
         try:
             await client.start_notify(characteristic, callback, bluez={"use_start_notify": False})
         except BleakDBusError as error:
@@ -127,7 +133,7 @@ class ClipTransport(BleTransport):
             try:
                 await client.connect()
             except BleakDBusError as error:
-                if error.dbus_error != "org.bluez.Error.AuthenticationFailed":
+                if not sys.platform.startswith("linux") or error.dbus_error != "org.bluez.Error.AuthenticationFailed":
                     raise
                 await pair_clip(device.details["path"])
                 client = BleakClient(device, timeout=self.connect_timeout, pair=False,

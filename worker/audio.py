@@ -7,12 +7,17 @@ import sys
 import wave
 
 
+def load_opus():
+    name = "libopus.dll" if sys.platform == "win32" else "libopus.so.0"
+    library = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)) / name
+    return C.CDLL(str(library) if library.is_file() else name)
+
+
 async def decode(parts: list[Path], target: Path, rate: int, channels: int) -> dict:
     if rate not in (8000, 12000, 16000, 24000, 48000) or channels not in (1, 2):
         raise ValueError("unsupported recording format")
     # libopus can decode directly at 16 kHz regardless of encoder sample rate.
-    library = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)) / "libopus.so.0"
-    opus = C.CDLL(str(library) if library.is_file() else "libopus.so.0")
+    opus = load_opus()
     opus.opus_decoder_create.argtypes = [C.c_int, C.c_int, C.POINTER(C.c_int)]
     opus.opus_decoder_create.restype = C.c_void_p
     opus.opus_decode.argtypes = [C.c_void_p, C.c_char_p, C.c_int32,
