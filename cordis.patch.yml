@@ -1,0 +1,13 @@
+- insert:
+    - id: clip-speech-to-text
+      name: '@deepseek-ai/dsh-experimental-speech-to-text'
+      disabled: !!js "ctx.get('profileContext')?.startedBundles.includes('@deepseek-ai/dsh-experimental-voice-input-bundle') === true"
+      config:
+        defaultProvider: sensevoice-local
+    - id: clip-speech-to-text-sensevoice
+      name: '@deepseek-ai/dsh-experimental-speech-to-text-sensevoice'
+      disabled: !!js "ctx.get('profileContext')?.startedBundles.includes('@deepseek-ai/dsh-experimental-voice-input-bundle') === true"
+      config:
+        dataRoot: !!js dshHomePath('speech-to-text', 'sensevoice')
+    - id: dsh-clip-for-agent
+      name: dsh-clip-for-agent

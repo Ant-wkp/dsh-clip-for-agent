@@ -1,0 +1,49 @@
+# Clip for DeepSeek Harness
+
+适用于 DeepSeek Harness `0.2.2-rc.1`、Node.js `24.9.0` 及以上、Linux x86-64。主机需开启 BlueZ 和蓝牙适配器。安装并启用插件后只启动 DSH，插件会管理包内 Python 设备进程和官方 SenseVoice 进程。
+
+在 DSH 的 **插件 → 安装插件** 中粘贴以下地址：
+
+```text
+git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.3
+```
+
+也可以在命令行安装：
+
+```bash
+dsh plugin --profile web add 'git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.3'
+dsh web
+```
+
+私有仓库需要主机上的 Git 能用已有凭据访问该仓库。例如使用 GitHub CLI 登录后运行 `gh auth setup-git` 配置 HTTPS 凭据助手。插件安装时由 DSH 主机使用 Git 凭据。
+
+这里的 `dsh` 指 DeepSeek Harness。如果 `dsh --version` 显示 Dancer's Shell，可用 `npx @deepseek-ai/dsh@0.2.2-rc.1` 执行以上命令。
+
+1. 在 DSH 左侧栏打开 **Clip**，点击 **扫描设备**，为设备选择 **配对连接**。
+2. 回到要录入的聊天，在 Clip 上开始录音，聊天输入栏会显示实时波形。
+3. 在 Clip 上停录，插件自动同步、解码并调用本地 SenseVoice。聊天仍处于可编辑状态且草稿版本与录音开始时一致时，转写插入当时的光标位置。
+4. 录音期间修改草稿、切换聊天或关闭页面后，可从原聊天手动插入保留的文本。同步或转写失败时，可从 **Clip → 录音结果** 重试。蓝牙断开时，重试会先连接这条录音所属的 Clip。没有识别到语音时会显示状态。DSH 重启后，可从同一面板选择 **同步最近录音**，重读设备上最后一段已保存的录音。恢复结果在聊天中手动插入。
+
+首次使用时，在 **Clip → 语音转写** 点击 **安装 SenseVoice 模型**，同一位置会显示下载进度。如果官方转写组件未启用，点击 **安装官方转写** 会在 Clip 面板发起安装或启用。DSH 需要重启才能加载组件时，面板会显示提示。模型缓存和官方语音插件共用。若已启用官方语音输入 bundle，Clip 复用已加载的官方服务和本地 SenseVoice。语音输入支持每段最多 120 秒，转写只写草稿，需要用户手动发送。
+
+```mermaid
+flowchart LR
+    BLE[Clip BLE] --> PY[包内 Python 设备进程]
+    PY --> HOST[Clip Host 服务]
+    HOST <-->|Clip Remote| WEB[DSH Web 侧栏与草稿]
+    HOST --> SPEECH[官方 speechToText]
+    SPEECH --> SV[官方 SenseVoice 进程]
+    SV --> SPEECH
+    SPEECH --> HOST
+```
+
+`clip` Remote 使用 DSH Gateway 的认证和状态流，并提供设备连接、模型准备、草稿绑定、任务重试和确认接口。Python 进程负责 SDK、BLE、CRC32 校验、续传和 Opus 解码，通过 `ctypes` 调用 libopus，按原规则在 Python 中执行双声道混音，输出 16 kHz 单声道 PCM16 WAV。WAV 留在本机 Host，Web 接收状态、波形和转写文本。同步缓存在确认结果或退出 DSH 后回收，转写失败后的重试可复用已下载的 WAV。
+
+开发测试可在登录后的地址加 `?clip-demo=1`。测试环境和性能数据见 [性能记录](PERFORMANCE.md)。
+
+开发构建需要当前 Clip SDK 源码，以及安装 PyInstaller 和 Bleak 的 Python 环境。
+
+```bash
+scripts/build-worker.sh /path/to/reSpeaker_Clip/sdk
+npm run build:client
+```
