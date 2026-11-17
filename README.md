@@ -15,15 +15,15 @@ Windows CI 已验证桌面 CLI 安装和设备进程通信。Linux 已验证 Cli
 
 ## 方式一：应用内「插件管理」
 
-使用 DSH `0.2.2-rc.3` 时，在 Web 或 Electron 桌面版打开 **插件 → 添加插件**，粘贴以下 GitHub 地址：
+使用 DSH `0.2.2-rc.3` 时，在 Web 或 Electron 桌面版打开 **插件 → 添加插件**，输入 `dsh-clip-for-agent@0.3.6`。使用 DSH `0.2.2-rc.1` 的 Linux 用户输入 `dsh-clip-for-agent@0.3.5`。[npm 包页面](https://www.npmjs.com/package/dsh-clip-for-agent)
+
+安装后启用插件。如界面提示重启，重启后在左侧栏打开 **Clip**。如果之前遇到 `0.3.5 is incompatible with dsh 0.2.2-rc.3`，安装 `0.3.6` 即可，无需添加版本豁免。
+
+也可以在安装框粘贴 GitHub 地址安装 `0.3.6`：
 
 ```text
 git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.6
 ```
-
-安装后启用插件。如界面提示重启，重启后在左侧栏打开 **Clip**。遇到 `0.3.5 is incompatible with dsh 0.2.2-rc.3` 时，使用这个链接安装 `0.3.6`，无需添加版本豁免。
-
-通过 [npm 包页面](https://www.npmjs.com/package/dsh-clip-for-agent) 核对版本。`0.3.6` 正式发布到 npm 后，DSH `0.2.2-rc.3` 的安装框也可以填 `dsh-clip-for-agent@0.3.6`。DSH `0.2.2-rc.1` 的 Linux 用户填 `dsh-clip-for-agent@0.3.5`。
 
 ## 方式二：命令行
 
@@ -35,11 +35,11 @@ git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.6
 使用桌面应用时，先启动一次以初始化 `desktop` profile，再从应用自带的 DSH 终端运行命令。网页和桌面各选一条：
 
 ```bash
-dsh plugin --profile web add 'git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.6'
-dsh plugin --profile desktop add 'git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.6'
+dsh plugin --profile web add dsh-clip-for-agent@0.3.6
+dsh plugin --profile desktop add dsh-clip-for-agent@0.3.6
 ```
 
-安装后启动或重启对应的 DSH 界面，并在插件管理中确认 Clip 已启用。对应版本在 npm 正式发布后，也可以把命令中的 GitHub 地址替换为上面的包名和版本。
+安装后启动或重启对应的 DSH 界面，并在插件管理中确认 Clip 已启用。也可以把命令中的包名替换为上面的 GitHub 地址。
 
 如果 `dsh --version` 显示 Dancer's Shell，Web 版可以用 `npx @deepseek-ai/dsh@0.2.2-rc.3` 代替命令中的 `dsh`。
 
