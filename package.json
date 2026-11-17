@@ -1,6 +1,6 @@
 {
   "name": "dsh-clip-for-agent",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "reSpeaker Clip BLE audio integration for DeepSeek Harness",
   "type": "module",
   "exports": {
@@ -36,8 +36,7 @@
     }
   },
   "scripts": {
-    "build:client": "node scripts/build-client.js",
-    "prepack": "npm run build:client"
+    "build:client": "node scripts/build-client.js"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-typert-protocol": "0.2.2-rc.1"

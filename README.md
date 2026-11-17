@@ -2,16 +2,16 @@
 
 适用于 DeepSeek Harness `0.2.2-rc.1`、Node.js `24.9.0` 及以上、Linux x86-64。主机需开启 BlueZ 和蓝牙适配器。安装并启用插件后只启动 DSH，插件会管理包内 Python 设备进程和官方 SenseVoice 进程。
 
-在 DSH 的 **插件 → 安装插件** 中粘贴以下地址：
+在 DSH 的 **插件 → 添加插件** 中粘贴以下地址：
 
 ```text
-git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.3
+git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.4
 ```
 
 也可以在命令行安装：
 
 ```bash
-dsh plugin --profile web add 'git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.3'
+dsh plugin --profile web add 'git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.4'
 dsh web
 ```
 
