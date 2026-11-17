@@ -1,14 +1,29 @@
 # Clip for DeepSeek Harness
 
-Clip v0.3.6 适用于 DeepSeek Harness `0.2.2-rc.3`、Node.js `24.9.0` 及以上，以及 Windows 或 Linux x86-64。运行 DSH Host 的电脑需开启蓝牙，Linux 另需 BlueZ。安装并启用插件后，DSH 自动启动包内的 Python 设备进程和 SenseVoice。使用 DSH `0.2.2-rc.1` 的 Linux 用户可继续安装 `dsh-clip-for-agent@0.3.5`。
+用 reSpeaker Clip 录音，DSH 显示实时波形，停止录音后通过本机 SenseVoice 转写到聊天草稿。安装并启用插件后，DSH 会启动包内的 Python 设备进程。
+
+## 版本兼容性
+
+| DSH 版本 | DSH Host 平台 | Clip 版本 |
+| --- | --- | --- |
+| `0.2.2-rc.3` | Windows x64、Linux x64 | `0.3.6` |
+| `0.2.2-rc.1` | Linux x64 | `0.3.5` |
+
+运行 DSH Host 的电脑需要蓝牙适配器。Linux 还需要 BlueZ。自行运行 DSH Web 时，Node.js 需为 `24.9.0` 或更高版本。Electron 桌面版使用应用自带的运行环境。
+
+Windows CI 已验证桌面 CLI 安装和设备进程通信。Linux 已验证 Clip 面板能扫描到实机。Windows 上的实机配对和录音转写尚待验证。[Windows CI 结果](https://github.com/Ant-wkp/dsh-clip-for-agent/actions/runs/44045623536)
 
 ## 方式一：应用内「插件管理」
 
-在 DSH Web 或 Electron 桌面应用中，打开 **插件 → 添加插件**，填入以下 GitHub 地址。安装后启用 Clip，如界面提示重启则重启 DSH。
+使用 DSH `0.2.2-rc.3` 时，在 Web 或 Electron 桌面版打开 **插件 → 添加插件**，粘贴以下 GitHub 地址：
 
 ```text
 git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.6
 ```
+
+安装后启用插件。如界面提示重启，重启后在左侧栏打开 **Clip**。遇到 `0.3.5 is incompatible with dsh 0.2.2-rc.3` 时，使用这个链接安装 `0.3.6`，无需添加版本豁免。
+
+通过 [npm 包页面](https://www.npmjs.com/package/dsh-clip-for-agent) 核对版本。`0.3.6` 正式发布到 npm 后，DSH `0.2.2-rc.3` 的安装框也可以填 `dsh-clip-for-agent@0.3.6`。DSH `0.2.2-rc.1` 的 Linux 用户填 `dsh-clip-for-agent@0.3.5`。
 
 ## 方式二：命令行
 
@@ -17,14 +32,14 @@ git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.6
 | `dsh web`（浏览器） | `web` |
 | Electron 桌面应用 | `desktop` |
 
-使用桌面应用时，先启动一次以初始化 `desktop` profile，再使用应用自带的 DSH CLI。
+使用桌面应用时，先启动一次以初始化 `desktop` profile，再从应用自带的 DSH 终端运行命令。网页和桌面各选一条：
 
 ```bash
 dsh plugin --profile web add 'git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.6'
 dsh plugin --profile desktop add 'git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.6'
 ```
 
-安装后启动或重启对应的 DSH 界面，并在插件管理中确认 Clip 已启用。[npm 包页面](https://www.npmjs.com/package/dsh-clip-for-agent)
+安装后启动或重启对应的 DSH 界面，并在插件管理中确认 Clip 已启用。对应版本在 npm 正式发布后，也可以把命令中的 GitHub 地址替换为上面的包名和版本。
 
 如果 `dsh --version` 显示 Dancer's Shell，Web 版可以用 `npx @deepseek-ai/dsh@0.2.2-rc.3` 代替命令中的 `dsh`。
 
@@ -34,10 +49,21 @@ dsh plugin --profile desktop add 'git+https://github.com/Ant-wkp/dsh-clip-for-ag
 git clone --branch v0.3.6 https://github.com/Ant-wkp/dsh-clip-for-agent.git
 cd dsh-clip-for-agent
 npm run build
+```
+
+然后按实际使用的界面选择一条命令：
+
+```bash
+# Linux · DSH Web
 dsh plugin --profile web add "file:$(pwd)"
 ```
 
-桌面应用用 `--profile desktop`。Windows PowerShell 中使用 `"file:$($PWD.Path)"`。`file:` 后填包含 `package.json` 和 `cordis.patch.yml` 的插件目录绝对路径。`npm run build` 生成 `lib/client.js`，并保留仓库随附的 Windows 和 Linux x86-64 Python 进程。修改 Python 设备代码后，请先重建对应进程。
+```powershell
+# Windows PowerShell · Electron 桌面版自带的 DSH 终端
+dsh plugin --profile desktop add "file:$($PWD.Path)"
+```
+
+`file:` 后填包含 `package.json` 和 `cordis.patch.yml` 的插件目录绝对路径。`npm run build` 生成 `lib/client.js`，使用仓库随附的 Windows 和 Linux x64 设备进程。修改 Python 设备代码后，请按下文重建对应进程。
 
 ## 使用 Clip
 
