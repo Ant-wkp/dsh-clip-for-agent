@@ -36,6 +36,9 @@ jobs:
         with:
           python-version: '3.12'
           architecture: x64
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.9.0'
       - name: Build libopus for Windows x64
         shell: pwsh
         run: |
@@ -72,6 +75,43 @@ jobs:
                   {'id': 1, 'ok': True, 'value': True},
               ], worker.stdout
           '@ | python -
+      - name: Install package with the DSH rc.3 desktop CLI on Windows
+        shell: pwsh
+        run: |
+          $temp = Join-Path $env:RUNNER_TEMP 'clip-test'
+          npm install --prefix $temp --ignore-scripts --no-audit --no-fund @deepseek-ai/dsh@0.2.2-rc.3 pnpm@11.28.11
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $env:Path = "$(Join-Path $temp 'node_modules/.bin');$env:Path"
+          $env:DSH_HOME = Join-Path $temp 'dsh-home'
+          $desktop = Join-Path $env:DSH_HOME 'profiles/desktop'
+          New-Item -ItemType Directory -Path $desktop -Force | Out-Null
+          '{"name":"dsh-profile-desktop","private":true,"dependencies":{},"dsh":{"profile":{"bundles":[]}}}' |
+            Set-Content -Path (Join-Path $desktop 'package.json') -Encoding utf8
+          $archive = npm pack --quiet --pack-destination $temp
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $env:CLIP_TEST_TARBALL = Join-Path $temp $archive
+          $env:CLIP_DSH_LIB = Join-Path $temp 'node_modules/@deepseek-ai/dsh/lib'
+          @'
+          import { readFileSync, readdirSync } from 'node:fs'
+          import { join } from 'node:path'
+          import { pathToFileURL } from 'node:url'
+
+          const lib = process.env.CLIP_DSH_LIB
+          const cli = readdirSync(lib).find(file =>
+            /^bin-.*\.js$/.test(file) && readFileSync(join(lib, file), 'utf8').includes('export { runCli }'))
+          if (!cli) throw new Error('DSH Desktop CLI entry point not found')
+          const { runCli } = await import(pathToFileURL(join(lib, cli)))
+          process.argv = [process.execPath, 'dsh-desktop-cli', 'plugin', '--profile', 'desktop', 'add',
+            'file:' + process.env.CLIP_TEST_TARBALL]
+          await runCli({ manageDesktopProfile: true })
+          '@ | node --input-type=module -
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $installed = Join-Path $desktop 'node_modules/dsh-clip-for-agent'
+          $version = (Get-Content -Raw (Join-Path $installed 'package.json') | ConvertFrom-Json).version
+          if ($version -ne '0.3.6') { throw "Unexpected installed version $version" }
+          if (-not (Test-Path (Join-Path $installed 'runtime/win32-x64/clip-worker.exe'))) {
+            throw 'The installed npm package does not include the Windows worker'
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: clip-worker-windows-x64
