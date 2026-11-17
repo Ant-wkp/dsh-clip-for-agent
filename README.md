@@ -1,23 +1,47 @@
 # Clip for DeepSeek Harness
 
-适用于 DeepSeek Harness `0.2.2-rc.1`、Node.js `24.9.0` 及以上、Linux x86-64。主机需开启 BlueZ 和蓝牙适配器。安装并启用插件后只启动 DSH，插件会管理包内 Python 设备进程和官方 SenseVoice 进程。
+适用于 DeepSeek Harness `0.2.2-rc.1`、Node.js `24.9.0` 及以上、Linux x86-64。运行 DSH Host 的主机需开启 BlueZ 和蓝牙适配器。安装并启用插件后只启动 DSH，插件会管理包内 Python 设备进程和官方 SenseVoice 进程。
 
-在 DSH 的 **插件 → 添加插件** 中粘贴以下地址：
+## 方式一：应用内「插件管理」
+
+在 DSH Web 或运行于 Linux x86-64 的 Electron 桌面应用中，打开 **插件 → 添加插件**，填入以下 GitHub 地址。安装后启用 Clip。
 
 ```text
-git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.4
+git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.5
 ```
 
-也可以在命令行安装：
+发布到 npm 后，同一安装框也可直接填 `dsh-clip-for-agent`。可在 [npm 包页面](https://www.npmjs.com/package/dsh-clip-for-agent) 查看发布状态。
+
+## 方式二：命令行
+
+| 你使用的界面 | Profile |
+| --- | --- |
+| `dsh web`（浏览器） | `web` |
+| Electron 桌面应用 | `desktop` |
+
+使用桌面应用时，先启动一次以初始化 `desktop` profile，再使用应用自带的 DSH CLI。
 
 ```bash
-dsh plugin --profile web add 'git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.4'
-dsh web
+dsh plugin --profile web add 'git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.5'
+dsh plugin --profile desktop add 'git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.5'
 ```
 
-私有仓库需要主机上的 Git 能用已有凭据访问该仓库。例如使用 GitHub CLI 登录后运行 `gh auth setup-git` 配置 HTTPS 凭据助手。插件安装时由 DSH 主机使用 Git 凭据。
+发布到 npm 后，以上命令可将 GitHub 地址替换为 `dsh-clip-for-agent`。安装后启动或重启对应的 DSH 界面，并在插件管理中确认 Clip 已启用。
 
-这里的 `dsh` 指 DeepSeek Harness。如果 `dsh --version` 显示 Dancer's Shell，可用 `npx @deepseek-ai/dsh@0.2.2-rc.1` 执行以上命令。
+如果 `dsh --version` 显示 Dancer's Shell，Web 版可以用 `npx @deepseek-ai/dsh@0.2.2-rc.1` 代替命令中的 `dsh`。
+
+## 方式三：从源码安装
+
+```bash
+git clone --branch v0.3.5 https://github.com/Ant-wkp/dsh-clip-for-agent.git
+cd dsh-clip-for-agent
+npm run build
+dsh plugin --profile web add "file:$(pwd)"
+```
+
+桌面应用用 `--profile desktop`。`file:` 后填插件目录的绝对路径，也就是包含 `package.json` 和 `cordis.patch.yml` 的目录。`npm run build` 重新生成 `lib/client.js`，默认使用仓库随附的 Linux x86-64 Python 进程。修改 Python 设备代码后，请先按下文的开发构建步骤重建它。
+
+## 使用 Clip
 
 1. 在 DSH 左侧栏打开 **Clip**，点击 **扫描设备**，为设备选择 **配对连接**。
 2. 回到要录入的聊天，在 Clip 上开始录音，聊天输入栏会显示实时波形。
