@@ -1,15 +1,13 @@
 # Clip for DeepSeek Harness
 
-适用于 DeepSeek Harness `0.2.2-rc.1`、Node.js `24.9.0` 及以上、Linux x86-64。运行 DSH Host 的主机需开启 BlueZ 和蓝牙适配器。安装并启用插件后只启动 DSH，插件会管理包内 Python 设备进程和官方 SenseVoice 进程。
+Clip v0.3.6 适用于 DeepSeek Harness `0.2.2-rc.3`、Node.js `24.9.0` 及以上，以及 Windows 或 Linux x86-64。运行 DSH Host 的电脑需开启蓝牙，Linux 另需 BlueZ。安装并启用插件后，DSH 自动启动包内的 Python 设备进程和 SenseVoice。使用 DSH `0.2.2-rc.1` 的 Linux 用户可继续安装 `dsh-clip-for-agent@0.3.5`。
 
 ## 方式一：应用内「插件管理」
 
-在 DSH Web 或运行于 Linux x86-64 的 Electron 桌面应用中，打开 **插件 → 添加插件**，填入 `dsh-clip-for-agent`，安装后启用 Clip。
-
-也可以填以下 GitHub 地址，固定安装 `v0.3.5`。
+在 DSH Web 或 Electron 桌面应用中，打开 **插件 → 添加插件**，填入以下 GitHub 地址。安装后启用 Clip，如界面提示重启则重启 DSH。
 
 ```text
-git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.5
+git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.6
 ```
 
 ## 方式二：命令行
@@ -22,24 +20,24 @@ git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.5
 使用桌面应用时，先启动一次以初始化 `desktop` profile，再使用应用自带的 DSH CLI。
 
 ```bash
-dsh plugin --profile web add dsh-clip-for-agent
-dsh plugin --profile desktop add dsh-clip-for-agent
+dsh plugin --profile web add 'git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.6'
+dsh plugin --profile desktop add 'git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.6'
 ```
 
 安装后启动或重启对应的 DSH 界面，并在插件管理中确认 Clip 已启用。[npm 包页面](https://www.npmjs.com/package/dsh-clip-for-agent)
 
-如果 `dsh --version` 显示 Dancer's Shell，Web 版可以用 `npx @deepseek-ai/dsh@0.2.2-rc.1` 代替命令中的 `dsh`。
+如果 `dsh --version` 显示 Dancer's Shell，Web 版可以用 `npx @deepseek-ai/dsh@0.2.2-rc.3` 代替命令中的 `dsh`。
 
 ## 方式三：从源码安装
 
 ```bash
-git clone --branch v0.3.5 https://github.com/Ant-wkp/dsh-clip-for-agent.git
+git clone --branch v0.3.6 https://github.com/Ant-wkp/dsh-clip-for-agent.git
 cd dsh-clip-for-agent
 npm run build
 dsh plugin --profile web add "file:$(pwd)"
 ```
 
-桌面应用用 `--profile desktop`。`file:` 后填插件目录的绝对路径，也就是包含 `package.json` 和 `cordis.patch.yml` 的目录。`npm run build` 重新生成 `lib/client.js`，默认使用仓库随附的 Linux x86-64 Python 进程。修改 Python 设备代码后，请先按下文的开发构建步骤重建它。
+桌面应用用 `--profile desktop`。Windows PowerShell 中使用 `"file:$($PWD.Path)"`。`file:` 后填包含 `package.json` 和 `cordis.patch.yml` 的插件目录绝对路径。`npm run build` 生成 `lib/client.js`，并保留仓库随附的 Windows 和 Linux x86-64 Python 进程。修改 Python 设备代码后，请先重建对应进程。
 
 ## 使用 Clip
 
@@ -70,4 +68,11 @@ flowchart LR
 ```bash
 scripts/build-worker.sh /path/to/reSpeaker_Clip/sdk
 npm run build:client
+```
+
+Windows x64 可用 GitHub Actions 的 **Build Windows Clip worker** 流程构建，或在安装 PyInstaller、Bleak 并准备好 x64 Opus DLL 后，在 PowerShell 执行：
+
+```powershell
+./scripts/build-worker.ps1 -Sdk C:/path/to/reSpeaker_Clip/sdk -OpusDll C:/path/to/opus.dll
+npm run build
 ```
