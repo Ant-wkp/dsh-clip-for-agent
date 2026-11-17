@@ -4,13 +4,13 @@
 
 ## 方式一：应用内「插件管理」
 
-在 DSH Web 或运行于 Linux x86-64 的 Electron 桌面应用中，打开 **插件 → 添加插件**，填入以下 GitHub 地址。安装后启用 Clip。
+在 DSH Web 或运行于 Linux x86-64 的 Electron 桌面应用中，打开 **插件 → 添加插件**，填入 `dsh-clip-for-agent`，安装后启用 Clip。
+
+也可以填以下 GitHub 地址，固定安装 `v0.3.5`。
 
 ```text
 git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.5
 ```
-
-发布到 npm 后，同一安装框也可直接填 `dsh-clip-for-agent`。可在 [npm 包页面](https://www.npmjs.com/package/dsh-clip-for-agent) 查看发布状态。
 
 ## 方式二：命令行
 
@@ -22,11 +22,11 @@ git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.5
 使用桌面应用时，先启动一次以初始化 `desktop` profile，再使用应用自带的 DSH CLI。
 
 ```bash
-dsh plugin --profile web add 'git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.5'
-dsh plugin --profile desktop add 'git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.5'
+dsh plugin --profile web add dsh-clip-for-agent
+dsh plugin --profile desktop add dsh-clip-for-agent
 ```
 
-发布到 npm 后，以上命令可将 GitHub 地址替换为 `dsh-clip-for-agent`。安装后启动或重启对应的 DSH 界面，并在插件管理中确认 Clip 已启用。
+安装后启动或重启对应的 DSH 界面，并在插件管理中确认 Clip 已启用。[npm 包页面](https://www.npmjs.com/package/dsh-clip-for-agent)
 
 如果 `dsh --version` 显示 Dancer's Shell，Web 版可以用 `npx @deepseek-ai/dsh@0.2.2-rc.1` 代替命令中的 `dsh`。
 
