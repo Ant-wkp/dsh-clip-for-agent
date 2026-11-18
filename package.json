@@ -1,6 +1,6 @@
 {
   "name": "dsh-clip-for-agent",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "description": "reSpeaker Clip RTC and SD recording over BLE for DeepSeek Harness",
   "type": "module",
   "os": ["linux", "win32"],
