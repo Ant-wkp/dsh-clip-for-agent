@@ -16,9 +16,11 @@ Linux 上已验证两个 DSH 版本均能安装、扫描和使用本机 SenseVoi
 
 ## 方式一：应用内「插件管理」
 
-在 Web 或 Electron 桌面版打开 **插件 → 添加插件**，粘贴下方的 GitHub 地址。`0.3.7` 正式发布到 npm 后，也可输入 `dsh-clip-for-agent@0.3.7`。[npm 包页面](https://www.npmjs.com/package/dsh-clip-for-agent)
+在 Web 或 Electron 桌面版打开 **插件 → 添加插件**，输入 `dsh-clip-for-agent@0.3.7`。[npm 包页面](https://www.npmjs.com/package/dsh-clip-for-agent)
 
 安装后启用插件。如界面提示重启，重启后在左侧栏打开 **Clip**。如果 `0.3.6` 在 `rc.1` 上报版本不兼容，安装 `0.3.7` 即可通过版本检查。
+
+也可以在安装框粘贴以下 GitHub 地址。
 
 ```text
 git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.7
@@ -34,11 +36,11 @@ git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.7
 使用桌面应用时，先启动一次以初始化 `desktop` profile，再从应用自带的 DSH 终端运行命令。网页和桌面各选一条：
 
 ```bash
-dsh plugin --profile web add 'git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.7'
-dsh plugin --profile desktop add 'git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.7'
+dsh plugin --profile web add dsh-clip-for-agent@0.3.7
+dsh plugin --profile desktop add dsh-clip-for-agent@0.3.7
 ```
 
-安装后启动或重启对应的 DSH 界面，并在插件管理中确认 Clip 已启用。npm 发布后，命令中的 GitHub 地址可换成 `dsh-clip-for-agent@0.3.7`。
+安装后启动或重启对应的 DSH 界面，并在插件管理中确认 Clip 已启用。也可以把命令中的包名换成上面的 GitHub 地址。
 
 如果 `dsh --version` 显示 Dancer's Shell，Web 版可以用 `npx @deepseek-ai/dsh@0.2.2-rc.1` 或 `npx @deepseek-ai/dsh@0.2.2-rc.3` 代替命令中的 `dsh`。请选择与你现有 DSH Web 相同的版本。
 
