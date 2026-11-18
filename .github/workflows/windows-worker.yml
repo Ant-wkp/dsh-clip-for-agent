@@ -107,8 +107,9 @@ jobs:
           '@ | node --input-type=module -
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $installed = Join-Path $desktop 'node_modules/dsh-clip-for-agent'
+          $expected = (Get-Content -Raw package.json | ConvertFrom-Json).version
           $version = (Get-Content -Raw (Join-Path $installed 'package.json') | ConvertFrom-Json).version
-          if ($version -ne '0.3.6') { throw "Unexpected installed version $version" }
+          if ($version -ne $expected) { throw "Expected $expected, got $version" }
           if (-not (Test-Path (Join-Path $installed 'runtime/win32-x64/clip-worker.exe'))) {
             throw 'The installed npm package does not include the Windows worker'
           }

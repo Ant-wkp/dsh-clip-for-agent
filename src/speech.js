@@ -1,5 +1,4 @@
 import { open } from 'node:fs/promises'
-import manifest from '../package.json' with { type: 'json' }
 
 export const providerId = 'sensevoice-local'
 const ready = new Set(['ready', 'standby'])
@@ -89,7 +88,11 @@ export async function installOfficialSpeech(manager, hasSpeechService) {
   if (bundle?.availability && bundle.availability !== 'missing') {
     return checkInstall(await manager.setBundleEnabled(voiceBundle, true))
   }
-  return checkInstall(await manager.installBundle(`${voiceBundle}@${manifest.engines.dsh}`, { saveExact: true }))
+  const spec = bundle?.installTarget?.spec
+  if (!spec) {
+    throw new ClipSpeechError('speech-install-unavailable', '当前 DSH 未提供可安装的官方转写组件。')
+  }
+  return checkInstall(await manager.installBundle(spec, { saveExact: true }))
 }
 
 export async function transcribeClip(speech, recording, language, signal, onTranscribing) {
