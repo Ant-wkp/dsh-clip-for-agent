@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ant-wkp/reSpeaker_Clip
-          ref: 9e759e51f0abfbbfec622263ce870c5202e5d9aa
+          ref: 5b8f299917986842c8acfbf2c61f1ae1defd2d22
           path: sdk-source
           persist-credentials: false
           sparse-checkout: sdk/src

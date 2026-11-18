@@ -104,9 +104,10 @@ export class ClipWorker {
     }
   }
 
-  async clearRecording(address, recordingId) {
+  async clearRecording(address, recordingId, transport) {
     const instance = await this.#instance?.catch(() => undefined)
-    if (instance) await rm(join(instance.dir, address.replaceAll(':', ''), recordingId), { recursive: true, force: true })
+    const folder = transport === 'rtc' ? 'rtc-' + recordingId : recordingId
+    if (instance) await rm(join(instance.dir, address.replaceAll(':', ''), folder), { recursive: true, force: true })
   }
 
   async dispose() {

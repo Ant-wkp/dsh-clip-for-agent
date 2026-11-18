@@ -17,13 +17,19 @@ const syncMessages = {
   'still-recording': 'Clip 正在录音或暂停。请先停录。',
   'device-rejected': 'Clip 拒绝了同步请求。请确认录音已保存后重试。',
   'no-recording': 'Clip 上没有已保存的录音。',
+  'rtc-unavailable': '未能开始 RTC 录音。请确认固件支持 RTC，然后重新开始。',
+  'rtc-empty': '没有收到 RTC 音频，请重新录制。',
+  'rtc-cache': '无法在本机保存 RTC 音频，请检查临时目录。',
+  'rtc-incomplete': 'RTC 音频流未完整结束，请重新录制。',
+  'rtc-interrupted': 'RTC 录音中途断开，请重新连接后录制。',
 }
 
 export default class ClipRemote extends TypertRemoteService {
   static inject = ['typert', 'subprocess']
   _listeners = new Set()
   _state = { connection: 'disconnected', scanned: false, devices: [], device: null,
-    speech: { phase: 'unavailable' }, speechInstall: null, task: null, pending: [], levels: [], error: null, recovering: false }
+    speech: { phase: 'unavailable' }, speechInstall: null, task: null, pending: [], levels: [], error: null,
+    recovering: false, rtcCommand: null }
   _address
   _worker
   _lifetime = new AbortController()
@@ -89,7 +95,7 @@ export default class ClipRemote extends TypertRemoteService {
         ...(task.recording && { durationSeconds: task.recording.durationSeconds }),
       })
     }
-    this._update({ task: active ? { id: active.id, phase: active.phase } : null, pending, ...patch })
+    this._update({ task: active ? { id: active.id, phase: active.phase, transport: active.transport } : null, pending, ...patch })
   }
 
   snapshot() {
@@ -177,6 +183,34 @@ export default class ClipRemote extends TypertRemoteService {
     return this._state
   }
 
+  async startRtc() {
+    this._guard()
+    if (this._state.connection !== 'connected') throw problem('device-unavailable', '请先连接 Clip。')
+    if (this._recording) throw problem('still-recording', syncMessages['still-recording'])
+    if (this._tasks.size >= maxTasks) throw problem('queue-full', '请先处理已有 Clip 录音结果。')
+    return this._rtcCommand('startRtc')
+  }
+
+  async stopRtc() {
+    if (this._recording?.transport !== 'rtc') return true
+    return this._rtcCommand('stopRtc')
+  }
+
+  async _rtcCommand(method) {
+    if (this._state.rtcCommand) return true
+    this._update({ rtcCommand: method, error: null })
+    try {
+      await this._worker.call(method)
+      return true
+    } catch (error) {
+      logger(this.ctx).warn('%s: %s', method, error.message)
+      const fallback = method === 'startRtc' ? syncMessages['rtc-unavailable'] : '无法停止 RTC 录音，请重试。'
+      throw problem(method, syncMessages[error.code] ?? fallback)
+    } finally {
+      this._update({ rtcCommand: null })
+    }
+  }
+
   async installSpeech() {
     if (this._state.speech.phase !== 'unavailable') return true
     if (this._state.speechInstall === 'installing' || this._state.speechInstall === 'restart-required') return true
@@ -248,14 +282,14 @@ export default class ClipRemote extends TypertRemoteService {
       throw problem('already-synced', '这条录音已在本次连接中处理。')
     }
     // Explicit recovery has no live recording edge to claim a draft.
-    this._onRecording(key, { phase: 'stopped', recordingId: id })
+    this._onRecording(key, { phase: 'stopped', recordingId: id, transport: 'sd' })
     return true
   }
 
   async retry(taskId) {
     const task = this._tasks.get(taskId)
     if (task?.phase !== 'error' || !task.retryable) throw problem('task-unavailable', '这条录音不能重试。')
-    if (!task.recording) {
+    if (!task.recording && task.transport !== 'rtc') {
       if (this._state.connection === 'disconnected') await this.connect(task.address)
       if (this._state.connection !== 'connected' || task.address !== this._address) {
         throw problem('device-unavailable', '请先连接录制这条语音的 Clip。')
@@ -288,7 +322,7 @@ export default class ClipRemote extends TypertRemoteService {
 
   async _clearCache(task) {
     try {
-      await this._worker.clearRecording(task.address, task.recordingId)
+      await this._worker.clearRecording(task.address, task.recordingId, task.transport)
     } catch (error) {
       logger(this.ctx).warn('Clip cache removal: %s', error.message)
     }
@@ -299,10 +333,12 @@ export default class ClipRemote extends TypertRemoteService {
     this._address = undefined
     for (const task of this._tasks.values()) {
       if (task.address !== address || task === this._running) continue
+      if (task.transport === 'rtc' && task.phase === 'syncing') continue
       if (['recording', 'paused', 'syncing'].includes(task.phase)) {
         task.phase = 'error'
-        task.error = 'Clip 连接已断开，重新连接后可以同步录音。'
-        task.retryable = true
+        task.error = task.transport === 'rtc' ? syncMessages['rtc-interrupted']
+          : 'Clip 连接已断开，重新连接后可以同步录音。'
+        task.retryable = task.transport !== 'rtc'
       }
     }
     this._recording = undefined
@@ -315,7 +351,7 @@ export default class ClipRemote extends TypertRemoteService {
       return
     }
     if (!this._address || !recordingId.test(data?.recordingId)) return
-    const id = this._address.replaceAll(':', '') + '-' + data.recordingId
+    const id = this._address.replaceAll(':', '') + '-' + data.recordingId + (data.transport === 'rtc' ? '-rtc' : '')
     if (event === 'levels' && this._recording?.id === id && this._recording.phase === 'recording') {
       this._update({ levels: data.levels })
     } else if (event === 'recording') {
@@ -338,15 +374,24 @@ export default class ClipRemote extends TypertRemoteService {
       }
       task = {
         id, recordingId: data.recordingId, address: this._address,
+        transport: data.transport === 'rtc' ? 'rtc' : 'sd',
         language: speechLanguage(this.ctx.get('speechToText')?.snapshot()),
       }
       this._tasks.set(id, task)
-    } else if (['syncing', 'decoding', 'waiting-speech', 'transcribing', 'transcript', 'empty'].includes(task.phase)) {
+    } else if (['syncing', 'decoding', 'waiting-speech', 'transcribing', 'transcript', 'empty'].includes(task.phase) ||
+      (task.transport === 'rtc' && task.phase === 'error')) {
       return
     }
     if (data.phase === 'stopped') {
       if (this._recording === task) this._recording = undefined
       task.phase = 'syncing'
+      this._publish({ levels: [] })
+      this._drain()
+    } else if (data.phase === 'failed') {
+      if (this._recording === task) this._recording = undefined
+      task.phase = 'error'
+      task.retryable = false
+      task.error = syncMessages[data.code] ?? syncMessages['rtc-incomplete']
       this._publish({ levels: [] })
       this._drain()
     } else if (data.phase === 'recording' || data.phase === 'paused') {
@@ -359,7 +404,8 @@ export default class ClipRemote extends TypertRemoteService {
   _drain() {
     if (this._running || this._state.recovering || this._lifetime.signal.aborted) return
     const job = [...this._tasks.values()].find(task => task.phase === 'waiting-speech' ||
-      (task.phase === 'syncing' && task.address === this._address && this._state.connection === 'connected'))
+      (task.phase === 'syncing' && (task.transport === 'rtc' ||
+        (task.address === this._address && this._state.connection === 'connected'))))
     if (!job) return
     this._running = job
     this._publish()
@@ -369,7 +415,13 @@ export default class ClipRemote extends TypertRemoteService {
   async _finish(task) {
     try {
       if (!task.recording) {
-        task.recording = await this._worker.call('downloadAndDecode', [task.recordingId], 225000)
+        if (task.transport === 'rtc') {
+          task.phase = 'decoding'
+          this._publish()
+          task.recording = await this._worker.call('finishRtc', [task.address, task.recordingId])
+        } else {
+          task.recording = await this._worker.call('downloadAndDecode', [task.recordingId], 225000)
+        }
       }
       task.phase = 'waiting-speech'
       this._publish()
@@ -380,8 +432,8 @@ export default class ClipRemote extends TypertRemoteService {
       })
       task.text = result.text.trim()
       task.phase = task.text ? 'transcript' : 'empty'
-      logger(this.ctx).info('Clip %ss WAV: BLE %sms, decode %sms, SenseVoice %sms',
-        result.audioSeconds, Math.round(task.recording.downloadMs), Math.round(task.recording.decodeMs),
+      logger(this.ctx).info('Clip %s %ss WAV: download %sms, decode %sms, SenseVoice %sms',
+        task.transport, result.audioSeconds, Math.round(task.recording.downloadMs), Math.round(task.recording.decodeMs),
         Math.round(result.inferenceSeconds * 1000))
       await this._clearCache(task)
     } catch (error) {
@@ -393,7 +445,8 @@ export default class ClipRemote extends TypertRemoteService {
       task.error = error instanceof ClipSpeechError || error.code?.startsWith('clip/')
         ? error.message : task.recording ? 'SenseVoice 转写失败，可以重试。'
           : syncMessages[error.code] || '录音同步失败，可以重试。'
-      task.retryable = !['too-long', 'decode-failed'].includes(error.code)
+      task.retryable = !['too-long', 'decode-failed'].includes(error.code) &&
+        (task.transport !== 'rtc' || !error.code?.startsWith('rtc-'))
       task.phase = 'error'
     } finally {
       this._running = undefined

@@ -1,7 +1,7 @@
 {
   "name": "dsh-clip-for-agent",
-  "version": "0.3.7",
-  "description": "reSpeaker Clip BLE audio integration for DeepSeek Harness",
+  "version": "0.3.8-rtc.1",
+  "description": "reSpeaker Clip RTC audio over BLE for DeepSeek Harness",
   "type": "module",
   "os": ["linux", "win32"],
   "cpu": ["x64"],

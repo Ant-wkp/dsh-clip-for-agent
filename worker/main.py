@@ -27,6 +27,9 @@ async def serve(workspace: Path):
         "connect": device.connect,
         "disconnect": device.disconnect,
         "status": device.status,
+        "startRtc": device.start_rtc,
+        "stopRtc": device.stop_rtc,
+        "finishRtc": device.finish_rtc,
         "downloadAndDecode": device.download,
         "latestRecording": device.latest_recording,
     }

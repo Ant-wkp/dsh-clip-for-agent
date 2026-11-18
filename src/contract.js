@@ -12,7 +12,7 @@ export function clipDescriptors() {
     }),
   })
   const deviceId = codec('DeviceId', value => typeof value === 'string' && /^(?:[0-9A-F]{2}:){5}[0-9A-F]{2}$/i.test(value))
-  const taskId = codec('TaskId', value => typeof value === 'string' && /^[0-9A-F]{12}-\d{14}$/.test(value))
+  const taskId = codec('TaskId', value => typeof value === 'string' && /^[0-9A-F]{12}-\d{14}(?:-rtc)?$/.test(value))
   const sessionId = codec('SessionId', value => typeof value === 'string' && value.length > 0 && value.length <= 256 && !/[\u0000-\u001f]/.test(value))
   const claimant = codec('Claimant', value => typeof value === 'string' && /^[0-9a-f]{32}$/.test(value))
   const success = codec('Success', value => value === true)
@@ -23,6 +23,8 @@ export function clipDescriptors() {
     ['scan', [], snapshot],
     ['connect', [['deviceId', deviceId]], snapshot],
     ['disconnect', [], snapshot],
+    ['startRtc', [], success],
+    ['stopRtc', [], success],
     ['snapshot', [], snapshot],
     ['follow', [], snapshot],
     ['installSpeech', [], success],

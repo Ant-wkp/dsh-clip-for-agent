@@ -19,12 +19,13 @@ from clip.transports.ble import BleTransport
 from clip.validation import chunk_name, session_id
 
 from audio import decode
+from rtc import RtcCapture, decode_rtc
 
 if sys.platform.startswith("linux"):
     from pairing import pair_clip
 
 ADDRESS = re.compile(r"(?:[0-9A-F]{2}:){5}[0-9A-F]{2}")
-ACTIVE_STATES = {"RECORDING", "PAUSED"}
+ACTIVE_STATES = {"RECORDING", "PAUSED", "STREAMING"}
 
 
 class SyncError(Exception):
@@ -60,7 +61,11 @@ def matches_reply(command, response):
         return type(data.get("files")) is int and type(data.get("size")) is int
     if command.startswith("AT+DOWNLOAD="):
         sid = command.split("=", 1)[1].split(":", 1)[0]
-        return data.get("state") == "transmitting" and data.get("session") == sid
+        return data.get("state") in {"transmitting", "streaming"} and data.get("session") == sid
+    if command == "AT+START=rtc":
+        return data.get("mode") == "rtc" and isinstance(data.get("session"), str)
+    if command == "AT+STOP":
+        return isinstance(data.get("session"), str)
     if command == "AT+CANCEL":
         return data.get("canceled") is True
     return True
@@ -229,6 +234,9 @@ class Device:
         self.last_level = 0.0
         self.monitor = None
         self.receiver = None
+        self.rtc = None
+        self.rtc_task = None
+        self.last_rtc = None
         self.lock = asyncio.Lock()
 
     async def scan(self, *, seconds=4):
@@ -270,9 +278,16 @@ class Device:
             await asyncio.gather(self.monitor, return_exceptions=True)
             self.monitor = None
         client, self.client = self.client, None
-        self.active = self.phase = self.address = None
-        if client:
-            await client.disconnect()
+        rtc_task = self.rtc_task
+        if self.rtc:
+            self.rtc.lose_link()
+        try:
+            if client:
+                await client.disconnect()
+        finally:
+            if rtc_task:
+                await rtc_task
+            self.active = self.phase = self.address = self.last_rtc = None
         return True
 
     def on_event(self, data):
@@ -280,33 +295,55 @@ class Device:
             self.active = self.phase = None
             if self.receiver:
                 self.receiver._fail(SyncError("link-lost", "BLE connection lost during transfer"))
-            self.emit("disconnected", {"reason": "BLE link lost"})
+            self.notice_link_loss("BLE link lost")
             return
         if data.get("event") == "levels":
             now = monotonic()
             if self.phase == "recording" and now - self.last_level >= 0.095:
                 self.last_level = now
-                self.emit("levels", {"recordingId": self.active, "levels": data["levels"]})
+                self.emit("levels", {"recordingId": self.active, "levels": data["levels"],
+                                     "transport": "rtc" if self.rtc else "sd"})
         if data.get("event") == "state":
             self.recording_state(data.get("state"), data.get("session"))
 
-    def recording_state(self, state, sid):
+    def notice_link_loss(self, reason):
+        def notify(_task=None):
+            self.emit("disconnected", {"reason": reason})
+
+        if self.rtc and self.rtc_task:
+            self.rtc.lose_link()
+            # A valid STREAM_END already delivered before the disconnect can
+            # still commit the recording and should reach DSH first.
+            self.rtc_task.add_done_callback(notify)
+        else:
+            notify()
+
+    def recording_state(self, state, sid, *, polled=False):
         if state in ACTIVE_STATES:
             try:
                 sid = session_id(sid)
             except (TypeError, ValueError):
                 return
+            if state == "STREAMING":
+                self.begin_rtc(sid)
+                return
+            if self.rtc or (polled and sid == self.last_rtc):
+                # GSTAT reports RTC as RECORDING. Only the start notification
+                # and the AT+START=rtc response identify it as RTC.
+                return
             phase = "paused" if state == "PAUSED" else "recording"
             if (self.active, self.phase) != (sid, phase):
                 self.active, self.phase = sid, phase
                 self.emit("recording", {"recordingId": sid, "phase": phase})
+        elif state == "IDLE" and self.rtc and (not sid or sid == self.rtc.sid):
+            self.rtc.mark_stopped()
         elif state == "IDLE" and self.active and (not sid or sid == self.active):
             ended, self.active = self.active, None
             self.phase = None
             self.emit("recording", {"recordingId": ended, "phase": "stopped"})
 
     def reconcile(self, status):
-        self.recording_state(status.state, status.session_id)
+        self.recording_state(status.state, status.session_id, polled=True)
 
     async def watch(self):
         try:
@@ -317,7 +354,7 @@ class Device:
         except asyncio.CancelledError:
             raise
         except Exception:
-            self.emit("disconnected", {"reason": "BLE link lost or unresponsive"})
+            self.notice_link_loss("BLE link lost or unresponsive")
             client, self.client = self.client, None
             try:
                 if client:
@@ -335,11 +372,67 @@ class Device:
             raise SyncError("link-lost", "Clip is not connected")
         return self.client
 
+    def begin_rtc(self, sid):
+        if self.rtc or self.last_rtc == sid or self.client is None or self.address is None:
+            return
+        self.last_rtc = sid
+        try:
+            capture = RtcCapture(self.client, sid, self.rtc_folder(self.address, sid))
+        except OSError:
+            self.emit_rtc(sid, "failed", "rtc-cache")
+            return
+        self.rtc = capture
+        self.active, self.phase = sid, "recording"
+        self.emit_rtc(sid, "recording")
+        self.rtc_task = asyncio.create_task(self.receive_rtc(capture))
+
+    def emit_rtc(self, sid, phase, code=None):
+        data = {"recordingId": sid, "phase": phase, "transport": "rtc"}
+        if code:
+            data["code"] = code
+        self.emit("recording", data)
+
+    async def receive_rtc(self, capture):
+        error_code = None
+        try:
+            await capture.receive(self.lock)
+        except Exception as error:
+            error_code = getattr(error, "code", None) or "rtc-incomplete"
+        finally:
+            self.rtc = self.rtc_task = None
+            self.active = self.phase = None
+        self.emit_rtc(capture.sid, "failed" if error_code else "stopped", error_code)
+
+    async def start_rtc(self):
+        async with self.lock:
+            client = self.require_client()
+            if self.rtc or self.active:
+                raise SyncError("still-recording", "Clip is already recording")
+            try:
+                sid = session_id(await client.start_rtc())
+            except CommandError as error:
+                raise SyncError("rtc-unavailable", str(error)) from error
+            self.begin_rtc(sid)
+            return True
+
+    async def stop_rtc(self):
+        if self.rtc:
+            await self.rtc.stop(self.lock)
+        return True
+
+    def rtc_folder(self, address, sid):
+        if not isinstance(address, str) or not ADDRESS.fullmatch(address):
+            raise ValueError("invalid BLE address")
+        return self.workspace / address.replace(":", "") / ("rtc-" + session_id(sid))
+
+    async def finish_rtc(self, address, sid):
+        return await decode_rtc(self.rtc_folder(address, sid))
+
     async def latest_recording(self):
         async with self.lock:
             client = self.require_client()
             status = await client.status()
-            if status.state in ACTIVE_STATES:
+            if self.rtc or status.state in ACTIVE_STATES:
                 raise SyncError("still-recording", "Stop recording before fetching the latest file")
             sessions = await client.list_sessions(per_page=5)
             for session in sessions:
@@ -371,6 +464,8 @@ class Device:
         sid = session_id(recording_id)
         async with self.lock:
             client = self.require_client()
+            if self.rtc:
+                raise SyncError("still-recording", "Stop RTC before syncing an SD recording")
             details, names = await self.finalized_files(client, sid)
             folder = self.workspace / self.address.replace(":", "") / sid
             folder.mkdir(mode=0o700, parents=True, exist_ok=True)

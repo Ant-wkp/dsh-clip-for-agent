@@ -243,6 +243,8 @@ window.__ModuleLoader__.load({
         scan: () => invoke('scan'),
         connect: id => invoke('connect', id),
         disconnect: () => invoke('disconnect'),
+        start: () => invoke('startRtc'),
+        stop: () => invoke('stopRtc'),
         retry: id => invoke('retry', id),
         syncLatest: () => invoke('syncLatest'),
         ackResult: id => invoke('ackResult', id),
@@ -305,9 +307,10 @@ window.__ModuleLoader__.load({
       const canEdit = () => conversationVisible() && !document.hidden && document.hasFocus()
 
       function ClipPanel() {
-        const { loaded, scanned, connection, pending, devices, device, error, speech, speechInstall, task, recovering } = useSyncExternalStore(source.subscribe, source.getSnapshot)
+        const { loaded, scanned, connection, pending, devices, device, error, speech, speechInstall, task, recovering, rtcCommand } = useSyncExternalStore(source.subscribe, source.getSnapshot)
         const busy = connection === 'scanning' || connection === 'connecting'
         const connected = connection === 'connected'
+        const recordingRtc = task?.transport === 'rtc' && ['recording', 'paused'].includes(task.phase)
         const speechPhase = loaded ? speech?.phase : 'checking'
         const speechBusy = ['checking', 'downloading', 'loading', 'waking', 'cancelling'].includes(speechPhase)
         const speechLabels = {
@@ -334,7 +337,7 @@ window.__ModuleLoader__.load({
             h('header', { className: 'clip-panel-header', 'data-window-drag': true },
               h('div', null,
                 h('h1', null, 'Clip'),
-                h('p', { className: 'clip-panel-intro' }, '通过本机蓝牙连接 reSpeaker Clip。')),
+                h('p', { className: 'clip-panel-intro' }, '通过本机蓝牙接收 reSpeaker Clip 的 RTC 实时音频。')),
               h('div', { className: 'clip-panel-actions' },
                 h(Button, {
                   type: 'button', size: 'sm', variant: 'outline', className: 'clip-panel-action',
@@ -383,10 +386,15 @@ window.__ModuleLoader__.load({
                 }, speechAction.label))),
             h('section', { className: 'clip-panel-group', 'aria-label': demo ? '待插入转写' : '录音结果' },
               h('h2', null, demo ? '待插入转写' : '录音结果'),
+              !demo && connected && h(Button, {
+                type: 'button', size: 'sm', variant: 'primary',
+                disabled: Boolean(rtcCommand) || recovering || (Boolean(task) && !recordingRtc),
+                onClick: recordingRtc ? source.stop : source.start,
+              }, recordingRtc ? '停止 RTC 录音' : '开始 RTC 录音'),
               !demo && h(Button, {
-                type: 'button', size: 'sm', variant: 'outline', disabled: !connected || Boolean(task) || recovering,
+                type: 'button', size: 'sm', variant: 'outline', disabled: !connected || Boolean(task) || recovering || Boolean(rtcCommand),
                 onClick: source.syncLatest,
-              }, recovering ? '正在查找…' : '同步最近录音'),
+              }, recovering ? '正在查找…' : '同步最近 SD 录音'),
               !demo && task && h('p', { className: 'clip-panel-note', role: 'status' },
                 task.phase === 'recording' || task.phase === 'paused' ? 'Clip 正在录音或暂停' : '正在处理录音…'),
               pending.length
@@ -407,7 +415,7 @@ window.__ModuleLoader__.load({
       }
 
       function ClipComposer({ sessionId, inputActions, locked, onActiveChange }) {
-        const { connection, task, pending } = useSyncExternalStore(source.subscribe, source.getSnapshot)
+        const { connection, task, pending, rtcCommand, recovering } = useSyncExternalStore(source.subscribe, source.getSnapshot)
         const { activePanelId } = useSyncExternalStore(panelInfo.subscribe, panelInfo.getSnapshot)
         const result = pending.findLast(item => item.sessionId === sessionId || item.sessionId === undefined)
         const editingLocked = useRef(locked)
@@ -442,8 +450,9 @@ window.__ModuleLoader__.load({
             h('span', { className: 'clip-voice-idle' },
               h(Button, {
                 type: 'button', className: 'clip-voice-trigger', size: 'sm',
-                'aria-label': demo ? '开始 Clip 录音（模拟）' : '打开 Clip 设备面板', disabled: locked,
-                onMouseDown: keepEditorFocus, onClick: demo ? source.start : () => ctx.layout.selectPanel(panelId),
+                'aria-label': demo ? '开始 Clip 录音（模拟）' : '开始 Clip RTC 录音',
+                disabled: locked || Boolean(rtcCommand) || recovering,
+                onMouseDown: keepEditorFocus, onClick: source.start,
               }, h(IconMicrophoneOutlineRegular, { size: 18 }))))
         }
 
@@ -473,9 +482,10 @@ window.__ModuleLoader__.load({
           : h('span', {
             className: 'clip-voice-message', role: 'status', title: isFeedback ? result.text : message,
           }, !dismissible && phase !== 'paused' && h(StateDot, { state: 'ongoing' }), h('span', { className: 'clip-voice-message-text' }, message)),
-        demo && isRecording && h(Button, {
+        (demo ? isRecording : task?.transport === 'rtc' && (isRecording || phase === 'paused')) && h(Button, {
           type: 'button', className: 'clip-voice-round', size: 'sm',
-          'aria-label': '停止 Clip 录音（模拟）', onMouseDown: keepEditorFocus, onClick: source.stop,
+          'aria-label': demo ? '停止 Clip 录音（模拟）' : '停止 Clip RTC 录音',
+          disabled: Boolean(rtcCommand), onMouseDown: keepEditorFocus, onClick: source.stop,
         }, h(IconStopFillRegular, { size: 14 })),
         isFeedback && h(Button, {
           type: 'button', className: 'clip-voice-insert', size: 'sm',
