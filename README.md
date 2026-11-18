@@ -12,7 +12,7 @@
 
 Clip 使用当前 DSH 版本随附的官方转写组件。切换 DSH 版本后，两个受支持版本可继续使用同一个 Clip 安装包。
 
-Windows CI 已验证桌面 CLI 安装和设备进程通信。Linux 已验证 Clip 面板能扫描到实机。Windows 上的实机配对和录音转写尚待验证。[Windows CI 结果](https://github.com/Ant-wkp/dsh-clip-for-agent/actions/runs/44045623536)
+Linux 上已验证两个 DSH 版本均能安装、扫描和使用本机 SenseVoice 转写。Windows CI 已验证 `rc.3` 桌面 CLI 安装、设备进程通信和 SenseVoice 加载。Windows 上的实机配对及录音转写尚待验证。[Windows CI 结果](https://github.com/Ant-wkp/dsh-clip-for-agent/actions/runs/44217672737)
 
 ## 方式一：应用内「插件管理」
 
