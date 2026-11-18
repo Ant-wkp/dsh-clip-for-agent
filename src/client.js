@@ -10,7 +10,8 @@ window.__ModuleLoader__.load({
     // CLIP_WIRE_CONTRACT
     const panelId = 'clip-for-agent'
     const activitySlot = 'conversation.input.activity'
-    const demoText = '这是一条来自 Clip 的模拟语音转写。'
+    // CLIP_MESSAGES
+    const localeNamespace = 'dsh-clip-for-agent'
     const recordingModeKey = 'dsh-clip-for-agent.recording-mode'
     const modeLabel = (mode) => mode === 'sd' ? 'SD' : 'RTC'
     const panelStyles = `
@@ -75,7 +76,7 @@ window.__ModuleLoader__.load({
       .clip-voice-insert { flex: none; }
     `
 
-    function Waveform({ readAmplitude }) {
+    function Waveform({ readAmplitude, label }) {
       const svg = useRef(null)
       useLayoutEffect(() => {
         const strokes = svg.current.querySelectorAll('line')
@@ -103,7 +104,7 @@ window.__ModuleLoader__.load({
 
       return h('svg', {
         ref: svg, className: 'clip-voice-waveform', viewBox: '0 0 640 40',
-        preserveAspectRatio: 'none', role: 'img', 'aria-label': 'Clip 正在输入',
+        preserveAspectRatio: 'none', role: 'img', 'aria-label': label,
       }, Array.from({ length: 80 }, (_, index) => {
         const x = index * 8 + 4
         return h('line', {
@@ -113,7 +114,7 @@ window.__ModuleLoader__.load({
       }))
     }
 
-    function createDemoSource(enabled, window) {
+    function createDemoSource(enabled, window, t) {
       let nextId = 0
       let timer
       let levelTimer
@@ -186,7 +187,7 @@ window.__ModuleLoader__.load({
           timer = window.setTimeout(() => {
             update({ task: { id, phase: 'transcribing' } })
             timer = window.setTimeout(() => {
-              const result = { id, text: demoText, sessionId: targetSession }
+              const result = { id, text: t('demoText'), sessionId: targetSession }
               update({ task: null, pending: [...state.pending, result] })
             }, 700)
           }, 500)
@@ -218,26 +219,32 @@ window.__ModuleLoader__.load({
       const stream = ctx.remote.$stream({
         name: 'Clip',
         open: signal => ctx.remote.clip.follow(signal),
-        ended: () => new Error('Clip 状态流已断开。'),
-        carrierFailed: () => update({ error: '无法获取 Clip 状态。' }),
+        ended: () => new Error('Clip status stream disconnected'),
+        carrierFailed: () => update({ error: { key: 'status-unavailable' } }),
       })
       const observing = (async () => {
         try {
           for await (const item of stream) {
-            update({ ...item.value, loaded: true })
+            update({
+              ...item.value, loaded: true,
+              error: item.value.errorKey ? { key: item.value.errorKey } : null,
+            })
             item.accept()
           }
         } catch {
-          update({ error: '无法获取 Clip 状态。' })
+          update({ error: { key: 'status-unavailable' } })
         }
       })()
       async function invoke(method, ...args) {
         try {
           const response = await ctx.remote.clip[method](...args)
-          if (!response.ok && method !== 'claimDraft') update({ error: response.error.message })
+          if (!response.ok && method !== 'claimDraft') {
+            const { clipKey, args } = response.error.details ?? {}
+            update({ error: { key: clipKey ?? 'operation-failed', args } })
+          }
           return response.ok
         } catch {
-          if (method !== 'claimDraft') update({ error: '无法执行 Clip 操作。' })
+          if (method !== 'claimDraft') update({ error: { key: 'operation-failed' } })
           return false
         }
       }
@@ -317,12 +324,28 @@ window.__ModuleLoader__.load({
     }
 
     function registerUi(ctx, demo) {
-      const source = demo ? createDemoSource(true, window) : createRemoteSource(ctx)
+      const locale = ctx.locale
+      const t = locale.bind(localeNamespace)
+      ctx.effect(() => locale.register(localeNamespace, clipMessages))
+
+      const subscribeLocale = listener => locale.subscribe(listener)
+      const getLocaleSnapshot = () => locale.getSnapshot()
+      function useLocale() {
+        useSyncExternalStore(subscribeLocale, getLocaleSnapshot)
+      }
+
+      function errorMessage(key, args, fallback) {
+        return key && Object.hasOwn(clipMessages.en, 'error.' + key)
+          ? t('error.' + key, args) : fallback
+      }
+
+      const source = demo ? createDemoSource(true, window, t) : createRemoteSource(ctx)
       const panelInfo = ctx.layout.panelInfo
       const conversationVisible = () => panelInfo.getSnapshot().activePanelId === null
       const canEdit = () => conversationVisible() && !document.hidden && document.hasFocus()
 
       function ClipPanel() {
+        useLocale()
         const { loaded, scanned, connection, pending, devices, device, error, speech, speechInstall,
           task, recovering, recordingCommand, recordingMode } = useSyncExternalStore(source.subscribe, source.getSnapshot)
         const busy = connection === 'scanning' || connection === 'connecting'
@@ -332,43 +355,43 @@ window.__ModuleLoader__.load({
         const speechPhase = loaded ? speech?.phase : 'checking'
         const speechBusy = ['checking', 'downloading', 'loading', 'waking', 'cancelling'].includes(speechPhase)
         const speechLabels = {
-          ready: '已就绪', standby: '已安装', unprepared: '需要下载模型',
-          checking: '正在检查模型…', downloading: '正在下载模型…', loading: '正在加载模型…',
-          waking: '正在加载模型…', failed: '安装失败', cancelled: '安装已取消', unavailable: '官方转写未启用',
+          ready: t('speechReady'), standby: t('speechStandby'), unprepared: t('speechUnprepared'),
+          checking: t('speechChecking'), downloading: t('speechDownloading'), loading: t('speechLoading'),
+          waking: t('speechLoading'), failed: t('speechFailed'), cancelled: t('speechCancelled'), unavailable: t('speechUnavailable'),
         }
         const percentage = speech?.totalBytes > 0
           ? ' ' + Math.min(100, Math.floor(speech.completedBytes * 100 / speech.totalBytes)) + '%' : ''
 
         const speechAction = speechPhase === 'unavailable'
           ? (speechInstall === 'installing' || speechInstall === 'restart-required' ? null : {
-            label: speechInstall === 'failed' ? '重试安装官方转写' : '安装官方转写', run: source.installSpeech,
+            label: speechInstall === 'failed' ? t('retryInstallSpeech') : t('installSpeech'), run: source.installSpeech,
           })
           : ['unprepared', 'failed', 'cancelled'].includes(speechPhase)
-            ? { label: speechPhase === 'failed' ? '重试安装' : '安装 SenseVoice 模型', run: source.prepareSpeech }
+            ? { label: speechPhase === 'failed' ? t('retryModel') : t('installModel'), run: source.prepareSpeech }
             : null
 
         const rows = demo
-          ? (scanned ? [{ id: 'demo', name: 'reSpeaker Clip（模拟）' }] : [])
+          ? (scanned ? [{ id: 'demo', name: t('demoDevice') }] : [])
           : [...devices, ...(device && !devices.some(item => item.id === device.id) ? [device] : [])]
-        return h('section', { className: 'clip-panel', 'aria-label': 'Clip 设备面板' },
+        return h('section', { className: 'clip-panel', 'aria-label': t('panelLabel') },
           h('div', { className: 'clip-panel-content' },
             h('header', { className: 'clip-panel-header', 'data-window-drag': true },
               h('div', null,
                 h('h1', null, 'Clip'),
-                h('p', { className: 'clip-panel-intro' }, '通过本机蓝牙连接 reSpeaker Clip，支持 RTC 实时录音和 SD 录音。')),
+                h('p', { className: 'clip-panel-intro' }, t('intro'))),
               h('div', { className: 'clip-panel-actions' },
                 h(Button, {
                   type: 'button', size: 'sm', variant: 'outline', className: 'clip-panel-action',
                   icon: h(IconChevronLeftOutlineMedium, { size: 13 }),
                   onClick: () => ctx.layout.selectPanel(null),
-                }, '返回聊天'),
+                }, t('backToChat')),
                 h(Button, {
                   type: 'button', size: 'sm', variant: 'primary', className: 'clip-panel-action',
                   icon: h(IconSearchOutlineRegular, { size: 13 }), onClick: source.scan, disabled: busy || connected,
-                }, connection === 'scanning' ? '扫描中…' : demo ? '扫描模拟设备' : '扫描设备'))),
-            error && h('p', { className: 'clip-panel-note', role: 'alert' }, error),
-            h('section', { className: 'clip-panel-group', 'aria-label': '设备' },
-              h('h2', null, '设备'),
+                }, connection === 'scanning' ? t('scanning') : demo ? t('scanDemo') : t('scan')))),
+            error && h('p', { className: 'clip-panel-note', role: 'alert' }, errorMessage(error.key, error.args, t('error.operation-failed'))),
+            h('section', { className: 'clip-panel-group', 'aria-label': t('devices') },
+              h('h2', null, t('devices')),
               rows.length
                 ? h('ul', { className: 'clip-panel-list' }, rows.map(item => {
                   const selected = connected && (demo || item.id === device?.id)
@@ -377,69 +400,70 @@ window.__ModuleLoader__.load({
                     h('div', { className: 'clip-panel-row-body' },
                       h('span', { className: 'clip-panel-row-name' }, item.name),
                       h('p', { className: 'clip-panel-note', role: 'status' }, demo
-                        ? (selected ? '模拟 Clip 已连接' : '未连接')
-                        : selected ? '已连接 · 电量 ' + device.battery + '%' : item.id)),
+                        ? (selected ? t('demoConnected') : t('disconnected'))
+                        : selected ? t('connectedBattery', { battery: device.battery }) : item.id)),
                     h(Button, {
                       type: 'button', size: 'sm', variant: 'outline', className: 'clip-panel-action',
                       onClick: selected ? source.disconnect : () => source.connect(item.id),
                       disabled: busy || (connected && !selected),
-                    }, selected ? (demo ? '断开模拟设备' : '断开') : (demo ? '连接模拟设备' : '配对连接')))
+                    }, selected ? (demo ? t('disconnectDemo') : t('disconnect')) : (demo ? t('connectDemo') : t('connect'))))
                 }))
                 : h('p', { className: 'clip-panel-note', role: 'status' }, connection === 'scanning'
-                  ? '正在搜索附近的 Clip…' : scanned ? '未发现 Clip。请让设备进入可配对状态后重新扫描。' : '点击扫描查找附近的 Clip。')),
-            !demo && h('section', { className: 'clip-panel-group', 'aria-label': '语音转写' },
-              h('h2', null, '语音转写'),
+                  ? t('searching') : scanned ? t('noDevices') : t('scanPrompt'))),
+            !demo && h('section', { className: 'clip-panel-group', 'aria-label': t('speech') },
+              h('h2', null, t('speech')),
               h('div', { className: 'clip-panel-row' },
                 h('div', { className: 'clip-panel-row-body' },
                   h('span', { className: 'clip-panel-row-name' }, 'SenseVoice'),
                   h('p', { className: 'clip-panel-note', role: 'status' },
-                    speechInstall === 'installing' ? '正在安装官方转写…'
+                    speechInstall === 'installing' ? t('installingSpeech')
                       : speechInstall === 'restart-required' && speechPhase === 'unavailable'
-                        ? '官方转写已安装，请重启 DSH 后继续。'
+                        ? t('restartSpeech')
                         : (speechLabels[speechPhase] ?? '') + percentage)),
                 speechAction && h(Button, {
                   type: 'button', size: 'sm', variant: 'outline',
                   disabled: speechBusy || speechInstall === 'installing',
                   onClick: speechAction.run,
                 }, speechAction.label))),
-            h('section', { className: 'clip-panel-group', 'aria-label': demo ? '待插入转写' : '录音结果' },
-              h('h2', null, demo ? '待插入转写' : '录音结果'),
+            h('section', { className: 'clip-panel-group', 'aria-label': demo ? t('pendingTranscripts') : t('recordingResults') },
+              h('h2', null, demo ? t('pendingTranscripts') : t('recordingResults')),
               !demo && h('div', { className: 'clip-panel-actions' },
-                h('label', { className: 'clip-panel-mode' }, '录音模式',
+                h('label', { className: 'clip-panel-mode' }, t('recordingMode'),
                   h('select', {
                     value: recordingMode, disabled: Boolean(task || recordingCommand || recovering),
                     onChange: event => source.selectRecordingMode(event.target.value),
-                  }, h('option', { value: 'rtc' }, 'RTC 实时音频'), h('option', { value: 'sd' }, 'SD 录音（停录后同步）'))),
+                  }, h('option', { value: 'rtc' }, t('rtcMode')), h('option', { value: 'sd' }, t('sdMode')))),
                 connected && h(Button, {
                   type: 'button', size: 'sm', variant: 'primary',
                   disabled: Boolean(recordingCommand) || recovering || (Boolean(task) && !isRecording),
                   onClick: isRecording ? source.stop : source.start,
-                }, (isRecording ? '停止 ' : '开始 ') + currentMode + ' 录音'),
+                }, t(isRecording ? 'stopRecording' : 'startRecording', { mode: currentMode })),
                 h(Button, {
                   type: 'button', size: 'sm', variant: 'outline',
                   disabled: !connected || Boolean(task || recovering || recordingCommand),
                   onClick: source.syncLatest,
-                }, recovering ? '正在查找…' : '同步最近 SD 录音')),
+                }, recovering ? t('findingLatest') : t('syncLatest'))),
               !demo && task && h('p', { className: 'clip-panel-note', role: 'status' },
-                task.phase === 'recording' || task.phase === 'paused' ? 'Clip 正在录音或暂停' : '正在处理录音…'),
+                task.phase === 'recording' || task.phase === 'paused' ? t('recordingOrPaused') : t('processing')),
               pending.length
                 ? h('ul', { className: 'clip-panel-list' }, pending.map(item =>
                   h('li', { key: item.id, className: 'clip-panel-row' },
                     h('div', { className: 'clip-panel-row-body' },
                       h('div', { className: 'clip-panel-row-name' }, item.text ??
-                        (item.phase === 'empty' ? '未识别到语音' : item.message ?? '录音处理失败')),
-                      item.text && h('p', { className: 'clip-panel-note' }, item.sessionId ? '返回原聊天可插入' : '打开聊天后可插入')),
+                        (item.phase === 'empty' ? t('emptyTranscript') : errorMessage(item.messageKey, item.messageArgs, t('recordingFailed')))),
+                      item.text && h('p', { className: 'clip-panel-note' }, item.sessionId ? t('insertOriginalChat') : t('insertOpenChat'))),
                     !demo && item.retryable && h(Button, {
                       type: 'button', size: 'sm', variant: 'outline', disabled: busy,
                       onClick: () => source.retry(item.id),
-                    }, '重试'),
+                    }, t('retry')),
                     !demo && h(Button, {
                       type: 'button', size: 'sm', variant: 'outline', onClick: () => source.ackResult(item.id),
-                    }, '清除'))))
-                : h('p', { className: 'clip-panel-note' }, '暂无结果'))))
+                    }, t('clear')))))
+                : h('p', { className: 'clip-panel-note' }, t('noResults')))))
       }
 
       function ClipComposer({ sessionId, inputActions, locked, onActiveChange }) {
+        useLocale()
         const { connection, task, pending, recordingCommand, recordingMode, recovering } = useSyncExternalStore(source.subscribe, source.getSnapshot)
         const { activePanelId } = useSyncExternalStore(panelInfo.subscribe, panelInfo.getSnapshot)
         const result = pending.findLast(item => item.sessionId === sessionId || item.sessionId === undefined)
@@ -471,11 +495,11 @@ window.__ModuleLoader__.load({
         if (activePanelId !== null || (connection !== 'connected' && !result && !task)) return null
         const keepEditorFocus = event => event.preventDefault()
         if (!expanded) {
-          return h(Tooltip, { label: 'Clip 语音输入', side: 'top', portal: true },
+          return h(Tooltip, { label: t('voiceInput'), side: 'top', portal: true },
             h('span', { className: 'clip-voice-idle' },
               h(Button, {
                 type: 'button', className: 'clip-voice-trigger', size: 'sm',
-                'aria-label': demo ? '开始 Clip 录音（模拟）' : '开始 Clip ' + modeLabel(recordingMode) + ' 录音',
+                'aria-label': demo ? t('startDemo') : t('startClipRecording', { mode: modeLabel(recordingMode) }),
                 disabled: locked || Boolean(recordingCommand) || recovering,
                 onMouseDown: keepEditorFocus,
                 async onClick() {
@@ -488,31 +512,31 @@ window.__ModuleLoader__.load({
         const isRecording = phase === 'recording'
         const isFeedback = phase === 'feedback'
         const messages = {
-          feedback: '转写完成，可插入草稿', syncing: '正在同步…',
-          decoding: '正在解码…', transcribing: '正在转写…', paused: 'Clip 录音已暂停',
-          'waiting-speech': '正在准备语音转写…', empty: '未识别到语音', error: 'Clip 录音处理失败',
+          feedback: t('transcriptReady'), syncing: t('syncing'),
+          decoding: t('decoding'), transcribing: t('transcribing'), paused: t('paused'),
+          'waiting-speech': t('waitingSpeech'), empty: t('emptyTranscript'), error: t('clipRecordingFailed'),
         }
-        const message = phase === 'error' ? result?.message ?? messages.error : messages[phase]
+        const message = phase === 'error' ? errorMessage(result?.messageKey, result?.messageArgs, messages.error) : messages[phase]
         const dismissible = !task
         return h('div', {
           className: 'clip-voice-row',
           'data-voice-activity': phase,
-          'aria-label': 'Clip 语音输入',
+          'aria-label': t('voiceInput'),
         },
         (demo || dismissible) && h(Button, {
           type: 'button', className: 'clip-voice-round', size: 'sm',
-          'aria-label': dismissible ? '清除 Clip 结果' : '取消 Clip 录音',
+          'aria-label': dismissible ? t('clearResult') : t('cancelRecording'),
           onMouseDown: keepEditorFocus,
           onClick: dismissible ? () => source.ackResult(result.id) : source.cancel,
         }, h(IconCloseOutlineRegular, { size: 14 })),
         isRecording
-          ? h(Waveform, { readAmplitude: source.readAmplitude })
+          ? h(Waveform, { readAmplitude: source.readAmplitude, label: t('recordingWaveform') })
           : h('span', {
             className: 'clip-voice-message', role: 'status', title: isFeedback ? result.text : message,
           }, !dismissible && phase !== 'paused' && h(StateDot, { state: 'ongoing' }), h('span', { className: 'clip-voice-message-text' }, message)),
         (demo ? isRecording : task && (isRecording || phase === 'paused')) && h(Button, {
           type: 'button', className: 'clip-voice-round', size: 'sm',
-          'aria-label': demo ? '停止 Clip 录音（模拟）' : '停止 Clip ' + modeLabel(task.transport) + ' 录音',
+          'aria-label': demo ? t('stopDemo') : t('stopClipRecording', { mode: modeLabel(task.transport) }),
           disabled: Boolean(recordingCommand), onMouseDown: keepEditorFocus, onClick: source.stop,
         }, h(IconStopFillRegular, { size: 14 })),
         isFeedback && h(Button, {
@@ -521,7 +545,7 @@ window.__ModuleLoader__.load({
           onClick() {
             if (inputActions.insertText(result.text, inputActions.captureInsertion())) source.ackResult(result.id)
           },
-        }, '插入'))
+        }, t('insert')))
       }
 
       ctx.effect(() => source.dispose)
@@ -559,7 +583,7 @@ window.__ModuleLoader__.load({
       const demo = new URL(window.location.href).searchParams.get('clip-demo') === '1'
       if (demo) return registerUi(ctx, true)
       const dispose = await ctx.remote.$mount({ package: 'dsh-clip-for-agent', descriptors: clipDescriptors() })
-      const ui = ctx.inject(['remote.clip', 'slots', 'layout'], child => registerUi(child, false))
+      const ui = ctx.inject(['remote.clip', 'slots', 'layout', 'locale'], child => registerUi(child, false))
       try {
         await ui
       } catch (error) {
@@ -573,6 +597,6 @@ window.__ModuleLoader__.load({
       }
     }
 
-    return { inject: ['slots', 'layout', 'remote'], apply }
+    return { inject: ['slots', 'layout', 'remote', 'locale'], apply }
   },
 })

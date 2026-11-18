@@ -1,4 +1,5 @@
 import { open } from 'node:fs/promises'
+import { errorCopy } from './messages.js'
 
 export const providerId = 'sensevoice-local'
 const ready = new Set(['ready', 'standby'])
@@ -7,9 +8,11 @@ const maxSeconds = 120
 const maxBytes = 4 * 1024 * 1024
 
 export class ClipSpeechError extends Error {
-  constructor(code, message) {
-    super(message)
+  constructor(code, key = code, args) {
+    super(errorCopy(key, args))
     this.code = code
+    this.key = key
+    this.args = args
   }
 }
 
@@ -33,7 +36,7 @@ export function speechLanguage(snapshot) {
 export function prepareLocalSpeech(speech) {
   const state = speechStatus(speech?.snapshot())
   if (state.phase === 'unavailable') {
-    throw new ClipSpeechError('speech-unavailable', '请在 Clip 面板安装或启用官方转写。')
+    throw new ClipSpeechError('speech-unavailable')
   }
   if (!ready.has(state.phase) && !preparing.has(state.phase)) speech.prepare(providerId)
 }
@@ -44,11 +47,11 @@ async function waitForProvider(speech, signal) {
     if (ready.has(phase)) return
     if (phase === 'unavailable') break
     if (phase === 'failed' || phase === 'cancelled' || phase === 'unprepared') {
-      throw new ClipSpeechError('speech-prepare', 'SenseVoice 尚未就绪。请在 Clip 面板安装模型后重试。')
+      throw new ClipSpeechError('speech-prepare')
     }
   }
   signal.throwIfAborted()
-  throw new ClipSpeechError('speech-unavailable', '请在 Clip 面板安装或启用官方转写。')
+  throw new ClipSpeechError('speech-unavailable')
 }
 
 const voiceBundle = '@deepseek-ai/dsh-experimental-voice-input-bundle'
@@ -58,13 +61,14 @@ function checkInstall(result) {
   if (result.application === 'applied' || result.application === 'restart-required') {
     return result.application
   }
-  throw new ClipSpeechError('speech-install-failed', '官方转写安装未完成（' +
-    (result.error?.code ?? result.application) + '）。请重试或检查 DSH 插件配置。')
+  throw new ClipSpeechError('speech-install-failed', 'speech-install-incomplete', {
+    reason: result.error?.code ?? result.application,
+  })
 }
 
 export async function installOfficialSpeech(manager, hasSpeechService) {
   if (!manager) {
-    throw new ClipSpeechError('speech-install-unavailable', '当前 DSH 配置未启用插件管理。')
+    throw new ClipSpeechError('speech-install-unavailable', 'speech-manager-unavailable')
   }
   const [bundles, entries] = await Promise.all([manager.listBundles(), manager.listPlugins()])
   const bundle = bundles.find(item => item.name === voiceBundle && item.official)
@@ -83,21 +87,21 @@ export async function installOfficialSpeech(manager, hasSpeechService) {
     return status
   }
   if (hasSpeechService || bundle?.enabled) {
-    throw new ClipSpeechError('speech-install-failed', '官方转写组件未能启动。请检查 DSH 插件配置后重试。')
+    throw new ClipSpeechError('speech-install-failed', 'speech-component-failed')
   }
   if (bundle?.availability && bundle.availability !== 'missing') {
     return checkInstall(await manager.setBundleEnabled(voiceBundle, true))
   }
   const spec = bundle?.installTarget?.spec
   if (!spec) {
-    throw new ClipSpeechError('speech-install-unavailable', '当前 DSH 未提供可安装的官方转写组件。')
+    throw new ClipSpeechError('speech-install-unavailable')
   }
   return checkInstall(await manager.installBundle(spec, { saveExact: true }))
 }
 
 export async function transcribeClip(speech, recording, language, signal, onTranscribing) {
   if (recording.durationSeconds > maxSeconds || recording.wavBytes > maxBytes) {
-    throw new ClipSpeechError('too-long', '这段录音超过 120 秒语音输入上限。')
+    throw new ClipSpeechError('too-long')
   }
   await waitForProvider(speech, signal)
   const file = await open(recording.wav, 'r')
@@ -105,13 +109,13 @@ export async function transcribeClip(speech, recording, language, signal, onTran
   try {
     const stat = await file.stat()
     if (!stat.isFile() || stat.size !== recording.wavBytes || stat.size > maxBytes || stat.size < 46) {
-      throw new ClipSpeechError('invalid-audio', '本地录音不完整，请重新同步。')
+      throw new ClipSpeechError('invalid-audio')
     }
     audio = Buffer.alloc(stat.size)
     let offset = 0
     while (offset < audio.length) {
       const { bytesRead } = await file.read(audio, offset, audio.length - offset)
-      if (!bytesRead) throw new ClipSpeechError('invalid-audio', '本地录音不完整，请重新同步。')
+      if (!bytesRead) throw new ClipSpeechError('invalid-audio')
       offset += bytesRead
     }
   } finally {

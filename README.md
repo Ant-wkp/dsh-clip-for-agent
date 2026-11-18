@@ -14,6 +14,8 @@ Clip 使用当前 DSH 版本随附的官方转写组件。切换 DSH 版本后�
 
 RTC 实现基于 reSpeaker Clip `clip_agent` 分支的 SDK 和协议。RTC 模式需要固件支持 `AT+START=rtc`；没有该命令的固件可选择 SD 模式。固件支持双击 RTC 时，连接后也可用设备实体按键启停。
 
+Clip 面板和录音提示跟随 DSH 界面语言。可在 **设置 → 通用 → 语言** 切换中文或 English。其他界面语言使用英文界面。
+
 ## 方式一：应用内「插件管理」
 
 在 Web 或 Electron 桌面版打开 **插件 → 添加插件**，填写以下 GitHub 地址。npm 审核通过后，也可填写 `dsh-clip-for-agent@0.3.8`。[npm 包页面](https://www.npmjs.com/package/dsh-clip-for-agent)

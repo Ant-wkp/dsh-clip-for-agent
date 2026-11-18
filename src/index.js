@@ -1,34 +1,36 @@
 import { RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { clipDescriptors } from './contract.js'
+import { errorCopy } from './messages.js'
 import { ClipSpeechError, installOfficialSpeech, prepareLocalSpeech, speechLanguage, speechStatus, transcribeClip } from './speech.js'
 import { ClipWorker } from './worker.js'
 
 const packageName = 'dsh-clip-for-agent'
 const recordingId = /^[0-9]{14}$/
-const problem = (code, message) => new RemoteError('clip/' + code, message, {})
+const problem = (code, key = code, args) => new RemoteError('clip/' + code, errorCopy(key, args), { clipKey: key, ...(args && { args }) })
 const logger = ctx => ctx.logger('clip')
 const maxTasks = 16
-const syncMessages = {
-  'link-lost': '同步时蓝牙连接中断。重新连接 Clip 后重试。',
-  'file-not-ready': 'Clip 尚未完成录音文件写入。请稍后重试。',
-  'transfer-timeout': 'Clip 文件传输超时。请将设备靠近主机后重试。',
-  'transfer-incomplete': '收到的录音分片不完整或校验失败。请重试。',
-  'decode-failed': '录音已下载，但无法解码。请尝试重新录制。',
-  'still-recording': 'Clip 正在录音或暂停。请先停录。',
-  'device-rejected': 'Clip 拒绝了同步请求。请确认录音已保存后重试。',
-  'no-recording': 'Clip 上没有已保存的录音。',
-  'rtc-unavailable': '未能开始 RTC 录音。请确认固件支持 RTC，然后重新开始。',
-  'rtc-empty': '没有收到 RTC 音频，请重新录制。',
-  'rtc-cache': '无法在本机保存 RTC 音频，请检查临时目录。',
-  'rtc-incomplete': 'RTC 音频流未完整结束，请重新录制。',
-  'rtc-interrupted': 'RTC 录音中途断开，请重新连接后录制。',
-}
+const syncErrors = new Set([
+  'link-lost',
+  'file-not-ready',
+  'transfer-timeout',
+  'transfer-incomplete',
+  'decode-failed',
+  'still-recording',
+  'device-rejected',
+  'no-recording',
+  'rtc-unavailable',
+  'rtc-empty',
+  'rtc-cache',
+  'rtc-incomplete',
+  'rtc-interrupted',
+])
+const syncError = (code, fallback) => syncErrors.has(code) ? code : fallback
 
 export default class ClipRemote extends TypertRemoteService {
   static inject = ['typert', 'subprocess']
   _listeners = new Set()
   _state = { connection: 'disconnected', scanned: false, devices: [], device: null,
-    speech: { phase: 'unavailable' }, speechInstall: null, task: null, pending: [], levels: [], error: null,
+    speech: { phase: 'unavailable' }, speechInstall: null, task: null, pending: [], levels: [], error: null, errorKey: null,
     recovering: false, recordingCommand: null }
   _address
   _worker
@@ -81,6 +83,10 @@ export default class ClipRemote extends TypertRemoteService {
     for (const listener of this._listeners) listener()
   }
 
+  _setError(key, patch) {
+    this._update({ ...patch, error: key ? errorCopy(key) : null, errorKey: key })
+  }
+
   _publish(patch) {
     const queued = [...this._tasks.values()].find(task => task.phase === 'syncing')
     const active = this._recording ?? this._running ?? queued
@@ -90,7 +96,8 @@ export default class ClipRemote extends TypertRemoteService {
       pending.push({
         id: task.id, phase: task.phase, retryable: task.retryable ?? false,
         ...(task.sessionId && { sessionId: task.sessionId }),
-        ...(task.error && { message: task.error }),
+        ...(task.error && { message: errorCopy(task.error, task.errorArgs), messageKey: task.error,
+          ...(task.errorArgs && { messageArgs: task.errorArgs }) }),
         ...(task.text && { text: task.text }),
         ...(task.recording && { durationSeconds: task.recording.durationSeconds }),
       })
@@ -125,23 +132,22 @@ export default class ClipRemote extends TypertRemoteService {
   _guard() {
     if (this._state.recovering || ['syncing', 'decoding'].includes(this._running?.phase) ||
         ['connecting', 'scanning'].includes(this._state.connection)) {
-      throw problem('busy', 'Clip 正在同步录音或连接设备，请稍后重试。')
+      throw problem('busy')
     }
   }
 
   async scan() {
     this._guard()
     if (this._state.connection === 'connected') return this._state
-    this._update({ connection: 'scanning', error: null })
+    this._setError(null, { connection: 'scanning' })
     try {
       const devices = await this._worker.call('scan', [], 12000)
       this._update({ connection: 'disconnected', scanned: true, devices })
       return this._state
     } catch (error) {
-      const message = '蓝牙扫描失败，请检查主机蓝牙是否开启。'
       logger(this.ctx).warn('scan: %s', error.message)
-      this._update({ connection: 'disconnected', error: message })
-      throw problem('scan-failed', message)
+      this._setError('scan-failed', { connection: 'disconnected' })
+      throw problem('scan-failed')
     }
   }
 
@@ -150,10 +156,10 @@ export default class ClipRemote extends TypertRemoteService {
     const address = deviceId.toUpperCase()
     if (this._state.connection === 'connected') {
       if (this._address === address) return this._state
-      throw problem('already-connected', '请先断开当前 Clip。')
+      throw problem('already-connected')
     }
     this._address = address
-    this._update({ connection: 'connecting', error: null })
+    this._setError(null, { connection: 'connecting' })
     try {
       const device = await this._worker.call('connect', [address], 65000)
       if (this._address !== address) throw new Error('BLE link closed while connecting')
@@ -161,22 +167,21 @@ export default class ClipRemote extends TypertRemoteService {
       this._drain()
       return this._state
     } catch (error) {
-      const message = 'Clip 连接失败，请检查设备是否可配对。'
       logger(this.ctx).warn('connect: %s', error.message)
-      this._loseLink(message)
-      throw problem('connect-failed', message)
+      this._loseLink('connect-failed')
+      throw problem('connect-failed')
     }
   }
 
   async disconnect() {
     this._guard()
     if (this._state.connection !== 'connected') return this._state
-    this._update({ connection: 'connecting', error: null })
+    this._setError(null, { connection: 'connecting' })
     try {
       await this._worker.call('disconnect')
     } catch (error) {
       logger(this.ctx).warn('disconnect: %s', error.message)
-      throw problem('disconnect-failed', '无法确认 Clip 已断开，请重新连接后重试。')
+      throw problem('disconnect-failed')
     } finally {
       this._loseLink(null)
     }
@@ -193,9 +198,9 @@ export default class ClipRemote extends TypertRemoteService {
 
   async _startRecording(method) {
     this._guard()
-    if (this._state.connection !== 'connected') throw problem('device-unavailable', '请先连接 Clip。')
-    if (this._recording) throw problem('still-recording', syncMessages['still-recording'])
-    if (this._tasks.size >= maxTasks) throw problem('queue-full', '请先处理已有 Clip 录音结果。')
+    if (this._state.connection !== 'connected') throw problem('device-unavailable')
+    if (this._recording) throw problem('still-recording')
+    if (this._tasks.size >= maxTasks) throw problem('queue-full')
     return this._recordingCommand(method)
   }
 
@@ -211,21 +216,21 @@ export default class ClipRemote extends TypertRemoteService {
 
   async _recordingCommand(method) {
     if (this._state.recordingCommand) return true
-    this._update({ recordingCommand: method, error: null })
+    this._setError(null, { recordingCommand: method })
     try {
       await this._worker.call(method)
       return true
     } catch (error) {
       logger(this.ctx).warn('%s: %s', method, error.message)
       const fallback = {
-        startRtc: syncMessages['rtc-unavailable'],
-        startSd: '无法开始 SD 录音，请检查 Clip 上的 SD 卡和设备状态。',
-        stopRtc: '无法停止 RTC 录音，请重试。',
-        stopSd: '无法停止 SD 录音，请重试。',
+        startRtc: 'rtc-unavailable',
+        startSd: 'startSd',
+        stopRtc: 'stopRtc',
+        stopSd: 'stopSd',
       }[method]
-      const message = syncMessages[error.code] ?? fallback
-      this._update({ error: message })
-      throw problem(method, message)
+      const key = syncError(error.code, fallback)
+      this._setError(key)
+      throw problem(method, key)
     } finally {
       this._update({ recordingCommand: null })
     }
@@ -234,16 +239,16 @@ export default class ClipRemote extends TypertRemoteService {
   async installSpeech() {
     if (this._state.speech.phase !== 'unavailable') return true
     if (this._state.speechInstall === 'installing' || this._state.speechInstall === 'restart-required') return true
-    this._update({ speechInstall: 'installing', error: null })
+    this._setError(null, { speechInstall: 'installing' })
     try {
       const status = await installOfficialSpeech(this.ctx.get('pluginManager'), !!this.ctx.get('speechToText'))
       this._update({ speechInstall: status === 'restart-required' ? status : null })
       return true
     } catch (error) {
       this._update({ speechInstall: 'failed' })
-      if (error instanceof ClipSpeechError) throw problem(error.code, error.message)
+      if (error instanceof ClipSpeechError) throw problem(error.code, error.key, error.args)
       logger(this.ctx).warn('installSpeech: %s', error.message)
-      throw problem('speech-install-failed', '官方转写安装失败，请重试。')
+      throw problem('speech-install-failed')
     }
   }
 
@@ -252,21 +257,21 @@ export default class ClipRemote extends TypertRemoteService {
       prepareLocalSpeech(this.ctx.get('speechToText'))
       return true
     } catch (error) {
-      if (error instanceof ClipSpeechError) throw problem(error.code, error.message)
+      if (error instanceof ClipSpeechError) throw problem(error.code, error.key, error.args)
       logger(this.ctx).warn('prepareSpeech: %s', error.message)
-      throw problem('speech-prepare-failed', 'SenseVoice 准备失败，请重试。')
+      throw problem('speech-prepare-failed')
     }
   }
 
   claimDraft(taskId, sessionId, claimant) {
     const task = this._tasks.get(taskId)
-    if (!task) throw problem('task-unavailable', '录音任务已结束。')
+    if (!task) throw problem('task-unavailable')
     if (task.claimant) {
       if (task.claimant === claimant && task.sessionId === sessionId) return true
-      throw problem('draft-claimed', '这条录音已绑定到另一个已打开的聊天。')
+      throw problem('draft-claimed')
     }
     if (!['recording', 'paused'].includes(task.phase)) {
-      throw problem('task-unavailable', '录音已结束，可在聊天中手动插入结果。')
+      throw problem('task-unavailable', 'task-ended')
     }
     task.claimant = claimant
     task.sessionId = sessionId
@@ -276,30 +281,30 @@ export default class ClipRemote extends TypertRemoteService {
   async syncLatest() {
     this._guard()
     if (this._state.connection !== 'connected') {
-      throw problem('device-unavailable', '请先连接 Clip。')
+      throw problem('device-unavailable')
     }
     const address = this._address
-    this._update({ recovering: true, error: null })
+    this._setError(null, { recovering: true })
     let id
     try {
       id = await this._worker.call('latestRecording')
       if (!recordingId.test(id)) throw new Error('Invalid Clip recording identity')
-      if (this._address !== address) throw problem('link-lost', syncMessages['link-lost'])
+      if (this._address !== address) throw problem('link-lost')
     } catch (error) {
       logger(this.ctx).warn('Clip latest recording: %s', error.message)
-      throw problem('recovery-failed', syncMessages[error.code] || '暂时无法读取 Clip 录音列表，请重试。')
+      throw problem('recovery-failed', syncError(error.details?.clipKey ?? error.code, 'recovery-failed'))
     } finally {
       this._update({ recovering: false })
       this._drain()
     }
     const key = address.replaceAll(':', '') + '-' + id
     if (this._tasks.size >= maxTasks && !this._tasks.has(key)) {
-      throw problem('queue-full', 'Clip 待处理录音已达上限，请先清理已有结果。')
+      throw problem('queue-full', 'queue-limit')
     }
     const task = this._tasks.get(key)
     if (task?.phase === 'error') return this.retry(key)
     if (task || this._acknowledged.has(key)) {
-      throw problem('already-synced', '这条录音已在本次连接中处理。')
+      throw problem('already-synced')
     }
     // Explicit recovery has no live recording edge to claim a draft.
     this._onRecording(key, { phase: 'stopped', recordingId: id, transport: 'sd' })
@@ -308,18 +313,19 @@ export default class ClipRemote extends TypertRemoteService {
 
   async retry(taskId) {
     const task = this._tasks.get(taskId)
-    if (task?.phase !== 'error' || !task.retryable) throw problem('task-unavailable', '这条录音不能重试。')
+    if (task?.phase !== 'error' || !task.retryable) throw problem('task-unavailable', 'retry-unavailable')
     if (!task.recording && task.transport !== 'rtc') {
       if (this._state.connection === 'disconnected') await this.connect(task.address)
       if (this._state.connection !== 'connected' || task.address !== this._address) {
-        throw problem('device-unavailable', '请先连接录制这条语音的 Clip。')
+        throw problem('device-unavailable', 'retry-device')
       }
       if (this._tasks.get(taskId) !== task || task.phase !== 'error') {
-        throw problem('task-unavailable', '录音任务状态已变化。')
+        throw problem('task-unavailable', 'task-changed')
       }
     }
     task.phase = task.recording ? 'waiting-speech' : 'syncing'
     task.error = undefined
+    task.errorArgs = undefined
     this._publish()
     this._drain()
     return true
@@ -329,7 +335,7 @@ export default class ClipRemote extends TypertRemoteService {
     const task = this._tasks.get(taskId)
     if (!task) return true
     if (!['error', 'empty', 'transcript'].includes(task.phase)) {
-      throw problem('task-busy', '录音仍在处理。')
+      throw problem('task-busy')
     }
     // Acknowledge synchronously to keep retry and duplicate acknowledgements from racing with cache removal.
     this._tasks.delete(taskId)
@@ -348,7 +354,7 @@ export default class ClipRemote extends TypertRemoteService {
     }
   }
 
-  _loseLink(message) {
+  _loseLink(key) {
     const address = this._address
     this._address = undefined
     for (const task of this._tasks.values()) {
@@ -356,18 +362,19 @@ export default class ClipRemote extends TypertRemoteService {
       if (task.transport === 'rtc' && task.phase === 'syncing') continue
       if (['recording', 'paused', 'syncing'].includes(task.phase)) {
         task.phase = 'error'
-        task.error = task.transport === 'rtc' ? syncMessages['rtc-interrupted']
-          : 'Clip 连接已断开，重新连接后可以同步录音。'
+        task.error = task.transport === 'rtc' ? 'rtc-interrupted'
+          : 'link-lost-sd'
         task.retryable = task.transport !== 'rtc'
       }
     }
     this._recording = undefined
-    this._publish({ connection: 'disconnected', device: null, levels: [], error: message })
+    this._publish({ connection: 'disconnected', device: null, levels: [],
+      error: key ? errorCopy(key) : null, errorKey: key })
   }
 
   _event(event, data) {
     if (event === 'disconnected') {
-      if (this._address || data.reason === 'worker-exit') this._loseLink('与 Clip 的连接已断开。')
+      if (this._address || data.reason === 'worker-exit') this._loseLink('disconnected')
       return
     }
     if (!this._address || !recordingId.test(data?.recordingId)) return
@@ -389,7 +396,7 @@ export default class ClipRemote extends TypertRemoteService {
     let task = this._tasks.get(id)
     if (!task) {
       if (this._tasks.size >= maxTasks) {
-        this._update({ error: 'Clip 待处理录音已达上限，请先处理已有结果。' })
+        this._setError('queue-limit-event')
         return
       }
       task = {
@@ -411,7 +418,7 @@ export default class ClipRemote extends TypertRemoteService {
       if (this._recording === task) this._recording = undefined
       task.phase = 'error'
       task.retryable = false
-      task.error = syncMessages[data.code] ?? syncMessages['rtc-incomplete']
+      task.error = syncError(data.code, 'rtc-incomplete')
       this._publish({ levels: [] })
       this._drain()
     } else if (data.phase === 'recording' || data.phase === 'paused') {
@@ -462,9 +469,9 @@ export default class ClipRemote extends TypertRemoteService {
       // Keep a local diagnostic even when the profile has no log exporter.
       console.warn('[clip] %s %s: %s', task.phase, error.code || 'uncategorized', error.message)
       if (error.code === 'invalid-audio' || error.code === 'ENOENT') task.recording = undefined
-      task.error = error instanceof ClipSpeechError || error.code?.startsWith('clip/')
-        ? error.message : task.recording ? 'SenseVoice 转写失败，可以重试。'
-          : syncMessages[error.code] || '录音同步失败，可以重试。'
+      task.error = error instanceof ClipSpeechError ? error.key
+        : error.details?.clipKey ?? (task.recording ? 'transcription-failed' : syncError(error.code, 'sync-failed'))
+      task.errorArgs = error instanceof ClipSpeechError ? error.args : error.details?.args
       task.retryable = !['too-long', 'decode-failed'].includes(error.code) &&
         (task.transport !== 'rtc' || !error.code?.startsWith('rtc-'))
       task.phase = 'error'
