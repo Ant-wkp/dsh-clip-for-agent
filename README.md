@@ -16,13 +16,9 @@ RTC 实现基于本地 reSpeaker Clip `clip_agent` 分支的 SDK 和协议。设
 
 ## 方式一：应用内「插件管理」
 
-在 Web 或 Electron 桌面版打开 **插件 → 添加插件**，粘贴下方的 GitHub 分支地址。
+本地 `rtc` 分支的安装包可用 `npm pack` 生成。在 Web 或 Electron 桌面版打开 **插件 → 添加插件**，填入 **运行 DSH Host 的电脑可访问的**安装包绝对路径。
 
 安装后启用插件。如界面提示重启，重启后在左侧栏打开 **Clip**。
-
-```text
-git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#rtc
-```
 
 ## 方式二：命令行
 
@@ -34,8 +30,11 @@ git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#rtc
 使用桌面应用时，先启动一次以初始化 `desktop` profile，再从应用自带的 DSH 终端运行命令。网页和桌面各选一条：
 
 ```bash
-dsh plugin --profile web add 'git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#rtc'
-dsh plugin --profile desktop add 'git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#rtc'
+dsh plugin --profile web add '/绝对路径/dsh-clip-for-agent-0.3.8-rtc.1.tgz'
+```
+
+```powershell
+dsh plugin --profile desktop add 'C:/path/to/dsh-clip-for-agent-0.3.8-rtc.1.tgz'
 ```
 
 安装后启动或重启对应的 DSH 界面，并在插件管理中确认 Clip 已启用。
@@ -45,8 +44,7 @@ dsh plugin --profile desktop add 'git+https://github.com/Ant-wkp/dsh-clip-for-ag
 ## 方式三：从源码安装
 
 ```bash
-git clone --branch rtc https://github.com/Ant-wkp/dsh-clip-for-agent.git
-cd dsh-clip-for-agent
+git switch rtc
 npm run build
 ```
 
