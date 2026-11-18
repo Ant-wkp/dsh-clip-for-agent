@@ -29,7 +29,7 @@ export default class ClipRemote extends TypertRemoteService {
   _listeners = new Set()
   _state = { connection: 'disconnected', scanned: false, devices: [], device: null,
     speech: { phase: 'unavailable' }, speechInstall: null, task: null, pending: [], levels: [], error: null,
-    recovering: false, rtcCommand: null }
+    recovering: false, recordingCommand: null }
   _address
   _worker
   _lifetime = new AbortController()
@@ -183,31 +183,51 @@ export default class ClipRemote extends TypertRemoteService {
     return this._state
   }
 
-  async startRtc() {
+  startRtc() {
+    return this._startRecording('startRtc')
+  }
+
+  startSd() {
+    return this._startRecording('startSd')
+  }
+
+  async _startRecording(method) {
     this._guard()
     if (this._state.connection !== 'connected') throw problem('device-unavailable', '请先连接 Clip。')
     if (this._recording) throw problem('still-recording', syncMessages['still-recording'])
     if (this._tasks.size >= maxTasks) throw problem('queue-full', '请先处理已有 Clip 录音结果。')
-    return this._rtcCommand('startRtc')
+    return this._recordingCommand(method)
   }
 
   async stopRtc() {
     if (this._recording?.transport !== 'rtc') return true
-    return this._rtcCommand('stopRtc')
+    return this._recordingCommand('stopRtc')
   }
 
-  async _rtcCommand(method) {
-    if (this._state.rtcCommand) return true
-    this._update({ rtcCommand: method, error: null })
+  async stopSd() {
+    if (this._recording?.transport !== 'sd') return true
+    return this._recordingCommand('stopSd')
+  }
+
+  async _recordingCommand(method) {
+    if (this._state.recordingCommand) return true
+    this._update({ recordingCommand: method, error: null })
     try {
       await this._worker.call(method)
       return true
     } catch (error) {
       logger(this.ctx).warn('%s: %s', method, error.message)
-      const fallback = method === 'startRtc' ? syncMessages['rtc-unavailable'] : '无法停止 RTC 录音，请重试。'
-      throw problem(method, syncMessages[error.code] ?? fallback)
+      const fallback = {
+        startRtc: syncMessages['rtc-unavailable'],
+        startSd: '无法开始 SD 录音，请检查 Clip 上的 SD 卡和设备状态。',
+        stopRtc: '无法停止 RTC 录音，请重试。',
+        stopSd: '无法停止 SD 录音，请重试。',
+      }[method]
+      const message = syncMessages[error.code] ?? fallback
+      this._update({ error: message })
+      throw problem(method, message)
     } finally {
-      this._update({ rtcCommand: null })
+      this._update({ recordingCommand: null })
     }
   }
 

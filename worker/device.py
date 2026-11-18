@@ -64,7 +64,7 @@ def matches_reply(command, response):
         return data.get("state") in {"transmitting", "streaming"} and data.get("session") == sid
     if command == "AT+START=rtc":
         return data.get("mode") == "rtc" and isinstance(data.get("session"), str)
-    if command == "AT+STOP":
+    if command in {"AT+START", "AT+STOP"}:
         return isinstance(data.get("session"), str)
     if command == "AT+CANCEL":
         return data.get("canceled") is True
@@ -418,6 +418,23 @@ class Device:
     async def stop_rtc(self):
         if self.rtc:
             await self.rtc.stop(self.lock)
+        return True
+
+    async def start_sd(self):
+        async with self.lock:
+            client = self.require_client()
+            if self.rtc or self.active:
+                raise SyncError("still-recording", "Clip is already recording")
+            sid = session_id(await client.start_recording())
+            self.recording_state("RECORDING", sid)
+        return True
+
+    async def stop_sd(self):
+        async with self.lock:
+            if self.rtc or not self.active:
+                return True
+            result = await self.require_client().stop_recording()
+            self.recording_state("IDLE", result.get("session"))
         return True
 
     def rtc_folder(self, address, sid):

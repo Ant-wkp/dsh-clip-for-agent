@@ -48,12 +48,16 @@ class ClipTransportFixture(BaseTransport):
         if command == "AT+START=rtc":
             self.start_event()
             data = {"session": SID, "mode": "rtc"}
+        elif command == "AT+START":
+            # SD recording must still work when the state notification is lost.
+            data = {"session": SID}
         elif command == f"AT+DOWNLOAD={SID}":
             self._emit_file_frame(b"\x13\x0e" + SID.encode("ascii"))
             self.attached.set()
             data = {"state": "streaming", "session": SID}
         elif command == "AT+STOP":
-            self.end_frames()
+            if self.attached.is_set():
+                self.end_frames()
             data = {"session": SID}
         else:
             raise AssertionError(f"unexpected command: {command}")
@@ -135,3 +139,13 @@ class RtcTest(unittest.IsolatedAsyncioTestCase):
             await asyncio.wait_for(task, 2)
         self.assertEqual(self.transport.commands[-1], "AT+STOP")
         self.assertEqual(self.events[-1][1]["phase"], "stopped")
+
+    async def test_sd_start_and_stop_on_firmware_without_rtc(self):
+        self.assertTrue(await self.device.start_sd())
+        self.assertTrue(await self.device.stop_sd())
+        self.assertEqual(self.transport.commands, ["AT+START", "AT+STOP"])
+        self.assertIsNone(self.device.rtc_task)
+        self.assertEqual(self.events, [
+            ("recording", {"recordingId": SID, "phase": "recording"}),
+            ("recording", {"recordingId": SID, "phase": "stopped"}),
+        ])

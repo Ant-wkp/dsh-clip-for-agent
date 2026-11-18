@@ -25,6 +25,8 @@ export function clipDescriptors() {
     ['disconnect', [], snapshot],
     ['startRtc', [], success],
     ['stopRtc', [], success],
+    ['startSd', [], success],
+    ['stopSd', [], success],
     ['snapshot', [], snapshot],
     ['follow', [], snapshot],
     ['installSpeech', [], success],

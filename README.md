@@ -1,22 +1,26 @@
 # Clip for DeepSeek Harness
 
-用 reSpeaker Clip 的 RTC 模式，通过 BLE 实时接收 Opus 音频。DSH 在录音期间显示波形，停录后通过本机 SenseVoice 转写到聊天草稿。
+用 reSpeaker Clip 录音，DSH 在录音期间显示波形，停录后通过本机 SenseVoice 转写到聊天草稿。录音模式可在 Clip 面板选择：RTC 通过 BLE 实时接收 Opus，SD 模式先录到设备，再在停录后同步。
 
 ## 版本兼容性
 
 | DSH 版本 | DSH Host 平台 | Clip 版本 |
 | --- | --- | --- |
-| `0.2.2-rc.1` 或 `0.2.2-rc.3` | Windows x64、Linux x64 | `0.3.8-rtc.1` |
+| `0.2.2-rc.1` 或 `0.2.2-rc.3` | Windows x64、Linux x64 | `0.3.8` |
 
 运行 DSH Host 的电脑需要蓝牙适配器。Linux 还需要 BlueZ。自行运行 DSH Web 时，Node.js 需为 `24.9.0` 或更高版本。Electron 桌面版使用应用自带的运行环境。
 
 Clip 使用当前 DSH 版本随附的官方转写组件。切换 DSH 版本后，两个受支持版本可继续使用同一个 Clip 安装包。
 
-RTC 实现基于本地 reSpeaker Clip `clip_agent` 分支的 SDK 和协议。设备需要支持 `AT+START=rtc`。若固件支持双击启停 RTC，连接后也可用实体按键录音。
+RTC 实现基于 reSpeaker Clip `clip_agent` 分支的 SDK 和协议。RTC 模式需要固件支持 `AT+START=rtc`；没有该命令的固件可选择 SD 模式。固件支持双击 RTC 时，连接后也可用设备实体按键启停。
 
 ## 方式一：应用内「插件管理」
 
-本地 `rtc` 分支的安装包可用 `npm pack` 生成。在 Web 或 Electron 桌面版打开 **插件 → 添加插件**，填入 **运行 DSH Host 的电脑可访问的**安装包绝对路径。
+在 Web 或 Electron 桌面版打开 **插件 → 添加插件**，填写以下 GitHub 地址。npm 审核通过后，也可填写 `dsh-clip-for-agent@0.3.8`。[npm 包页面](https://www.npmjs.com/package/dsh-clip-for-agent)
+
+```text
+git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.8
+```
 
 安装后启用插件。如界面提示重启，重启后在左侧栏打开 **Clip**。
 
@@ -30,11 +34,8 @@ RTC 实现基于本地 reSpeaker Clip `clip_agent` 分支的 SDK 和协议。设
 使用桌面应用时，先启动一次以初始化 `desktop` profile，再从应用自带的 DSH 终端运行命令。网页和桌面各选一条：
 
 ```bash
-dsh plugin --profile web add '/绝对路径/dsh-clip-for-agent-0.3.8-rtc.1.tgz'
-```
-
-```powershell
-dsh plugin --profile desktop add 'C:/path/to/dsh-clip-for-agent-0.3.8-rtc.1.tgz'
+dsh plugin --profile web add 'git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.8'
+dsh plugin --profile desktop add 'git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.8'
 ```
 
 安装后启动或重启对应的 DSH 界面，并在插件管理中确认 Clip 已启用。
@@ -44,7 +45,8 @@ dsh plugin --profile desktop add 'C:/path/to/dsh-clip-for-agent-0.3.8-rtc.1.tgz'
 ## 方式三：从源码安装
 
 ```bash
-git switch rtc
+git clone --branch v0.3.8 https://github.com/Ant-wkp/dsh-clip-for-agent.git
+cd dsh-clip-for-agent
 npm run build
 ```
 
@@ -65,9 +67,9 @@ dsh plugin --profile desktop add "file:$($PWD.Path)"
 ## 使用 Clip
 
 1. 在 DSH 左侧栏打开 **Clip**，点击 **扫描设备**，为设备选择 **配对连接**。
-2. 回到要录入的聊天，点击输入栏的 Clip 麦克风按钮开始 RTC 录音。也可在 Clip 面板开始，或用支持双击 RTC 的固件在设备端开始。录音期间，设备通过 BLE 实时发送 Opus。
-3. 点击停止，或通过固件支持的设备按键停录。收到正常的结束帧后，插件解码音频并调用本机 SenseVoice。若仍在原聊天且草稿未变化，转写插入录音开始时的光标位置。否则可从结果手动插入。RTC 流开始 120 秒后会自动停录。
-4. RTC 音频只在 DSH Host 的临时目录缓存。蓝牙中途断开或缺少结束帧时需要重录。音频已经完整接收、只在转写阶段失败时，可以重试。对于已写入设备 SD 卡的录音，仍可在 **Clip → 录音结果** 选择 **同步最近 SD 录音**。
+2. 在 **Clip → 录音结果 → 录音模式** 选择「RTC 实时音频」或「SD 录音」。默认使用 RTC，选择会在当前浏览器或桌面端记住。回到要录入的聊天，点击输入栏的 Clip 麦克风按钮开始录音。也可在 Clip 面板开始。
+3. 点击停止，或通过设备支持的实体按键停录。RTC 在录制期间接收音频，收到结束帧后解码；SD 在停录后下载设备文件再解码。两种模式都通过本机 SenseVoice 转写。若仍在原聊天且草稿未变化，转写插入录音开始时的光标位置。否则可从结果手动插入。
+4. RTC 流开始 120 秒后会自动停录。蓝牙中途断开或缺少结束帧时需要重录。SD 录音可在重新连接后重试同步，也可手动选择 **同步最近 SD 录音**。
 
 首次使用时，在 **Clip → 语音转写** 点击 **安装 SenseVoice 模型**，同一位置会显示下载进度。如果官方转写组件未启用，点击 **安装官方转写** 会在 Clip 面板发起安装或启用。DSH 需要重启才能加载组件时，面板会显示提示。模型缓存和官方语音插件共用。若已启用官方语音输入 bundle，Clip 复用已加载的官方服务和本地 SenseVoice。语音输入支持每段最多 120 秒，转写只写草稿，需要用户手动发送。
 

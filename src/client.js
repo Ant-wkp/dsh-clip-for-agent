@@ -11,6 +11,8 @@ window.__ModuleLoader__.load({
     const panelId = 'clip-for-agent'
     const activitySlot = 'conversation.input.activity'
     const demoText = '这是一条来自 Clip 的模拟语音转写。'
+    const recordingModeKey = 'dsh-clip-for-agent.recording-mode'
+    const modeLabel = (mode) => mode === 'sd' ? 'SD' : 'RTC'
     const panelStyles = `
       .clip-panel {
         --clip-panel-inset: clamp(24px, 4vw, 48px);
@@ -50,6 +52,11 @@ window.__ModuleLoader__.load({
       .clip-panel-row-name { font-size: 14px; line-height: 20px; font-weight: 500; overflow-wrap: anywhere; }
       .clip-panel-note { margin: 0; color: var(--dsw-alias-label-tertiary); font-size: 13px; line-height: 20px; }
       .clip-panel-row .clip-panel-action { margin-inline-start: auto; }
+      .clip-panel-mode { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; }
+      .clip-panel-mode select {
+        font: inherit; color: inherit; padding: 4px 8px; border-radius: var(--dsw-radius-lg);
+        background: var(--dsw-specific-selector); border: 1px solid var(--dsw-alias-border-l3);
+      }
     `
     const activityStyles = `
       .clip-voice-idle { display: inline-flex; flex: none; }
@@ -193,8 +200,12 @@ window.__ModuleLoader__.load({
     }
 
     function createRemoteSource(ctx) {
+      let recordingMode = 'rtc'
+      try {
+        if (window.localStorage.getItem(recordingModeKey) === 'sd') recordingMode = 'sd'
+      } catch {}
       let state = { loaded: false, scanned: false, connection: 'disconnected', devices: [], device: null,
-        speech: { phase: 'unavailable' }, task: null, pending: [], levels: [], error: null }
+        speech: { phase: 'unavailable' }, task: null, pending: [], levels: [], error: null, recordingMode }
       const claimant = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('')
       let disposed = false
       const listeners = new Set()
@@ -243,8 +254,13 @@ window.__ModuleLoader__.load({
         scan: () => invoke('scan'),
         connect: id => invoke('connect', id),
         disconnect: () => invoke('disconnect'),
-        start: () => invoke('startRtc'),
-        stop: () => invoke('stopRtc'),
+        selectRecordingMode(mode) {
+          if (mode !== 'rtc' && mode !== 'sd') return
+          try { window.localStorage.setItem(recordingModeKey, mode) } catch {}
+          update({ recordingMode: mode })
+        },
+        start: () => invoke(state.recordingMode === 'sd' ? 'startSd' : 'startRtc'),
+        stop: () => invoke(state.task?.transport === 'sd' ? 'stopSd' : 'stopRtc'),
         retry: id => invoke('retry', id),
         syncLatest: () => invoke('syncLatest'),
         ackResult: id => invoke('ackResult', id),
@@ -307,10 +323,12 @@ window.__ModuleLoader__.load({
       const canEdit = () => conversationVisible() && !document.hidden && document.hasFocus()
 
       function ClipPanel() {
-        const { loaded, scanned, connection, pending, devices, device, error, speech, speechInstall, task, recovering, rtcCommand } = useSyncExternalStore(source.subscribe, source.getSnapshot)
+        const { loaded, scanned, connection, pending, devices, device, error, speech, speechInstall,
+          task, recovering, recordingCommand, recordingMode } = useSyncExternalStore(source.subscribe, source.getSnapshot)
         const busy = connection === 'scanning' || connection === 'connecting'
         const connected = connection === 'connected'
-        const recordingRtc = task?.transport === 'rtc' && ['recording', 'paused'].includes(task.phase)
+        const isRecording = ['recording', 'paused'].includes(task?.phase)
+        const currentMode = modeLabel(isRecording ? task.transport : recordingMode)
         const speechPhase = loaded ? speech?.phase : 'checking'
         const speechBusy = ['checking', 'downloading', 'loading', 'waking', 'cancelling'].includes(speechPhase)
         const speechLabels = {
@@ -337,7 +355,7 @@ window.__ModuleLoader__.load({
             h('header', { className: 'clip-panel-header', 'data-window-drag': true },
               h('div', null,
                 h('h1', null, 'Clip'),
-                h('p', { className: 'clip-panel-intro' }, '通过本机蓝牙接收 reSpeaker Clip 的 RTC 实时音频。')),
+                h('p', { className: 'clip-panel-intro' }, '通过本机蓝牙连接 reSpeaker Clip，支持 RTC 实时录音和 SD 录音。')),
               h('div', { className: 'clip-panel-actions' },
                 h(Button, {
                   type: 'button', size: 'sm', variant: 'outline', className: 'clip-panel-action',
@@ -386,15 +404,22 @@ window.__ModuleLoader__.load({
                 }, speechAction.label))),
             h('section', { className: 'clip-panel-group', 'aria-label': demo ? '待插入转写' : '录音结果' },
               h('h2', null, demo ? '待插入转写' : '录音结果'),
-              !demo && connected && h(Button, {
-                type: 'button', size: 'sm', variant: 'primary',
-                disabled: Boolean(rtcCommand) || recovering || (Boolean(task) && !recordingRtc),
-                onClick: recordingRtc ? source.stop : source.start,
-              }, recordingRtc ? '停止 RTC 录音' : '开始 RTC 录音'),
-              !demo && h(Button, {
-                type: 'button', size: 'sm', variant: 'outline', disabled: !connected || Boolean(task) || recovering || Boolean(rtcCommand),
-                onClick: source.syncLatest,
-              }, recovering ? '正在查找…' : '同步最近 SD 录音'),
+              !demo && h('div', { className: 'clip-panel-actions' },
+                h('label', { className: 'clip-panel-mode' }, '录音模式',
+                  h('select', {
+                    value: recordingMode, disabled: Boolean(task || recordingCommand || recovering),
+                    onChange: event => source.selectRecordingMode(event.target.value),
+                  }, h('option', { value: 'rtc' }, 'RTC 实时音频'), h('option', { value: 'sd' }, 'SD 录音（停录后同步）'))),
+                connected && h(Button, {
+                  type: 'button', size: 'sm', variant: 'primary',
+                  disabled: Boolean(recordingCommand) || recovering || (Boolean(task) && !isRecording),
+                  onClick: isRecording ? source.stop : source.start,
+                }, (isRecording ? '停止 ' : '开始 ') + currentMode + ' 录音'),
+                h(Button, {
+                  type: 'button', size: 'sm', variant: 'outline',
+                  disabled: !connected || Boolean(task || recovering || recordingCommand),
+                  onClick: source.syncLatest,
+                }, recovering ? '正在查找…' : '同步最近 SD 录音')),
               !demo && task && h('p', { className: 'clip-panel-note', role: 'status' },
                 task.phase === 'recording' || task.phase === 'paused' ? 'Clip 正在录音或暂停' : '正在处理录音…'),
               pending.length
@@ -415,7 +440,7 @@ window.__ModuleLoader__.load({
       }
 
       function ClipComposer({ sessionId, inputActions, locked, onActiveChange }) {
-        const { connection, task, pending, rtcCommand, recovering } = useSyncExternalStore(source.subscribe, source.getSnapshot)
+        const { connection, task, pending, recordingCommand, recordingMode, recovering } = useSyncExternalStore(source.subscribe, source.getSnapshot)
         const { activePanelId } = useSyncExternalStore(panelInfo.subscribe, panelInfo.getSnapshot)
         const result = pending.findLast(item => item.sessionId === sessionId || item.sessionId === undefined)
         const editingLocked = useRef(locked)
@@ -450,9 +475,12 @@ window.__ModuleLoader__.load({
             h('span', { className: 'clip-voice-idle' },
               h(Button, {
                 type: 'button', className: 'clip-voice-trigger', size: 'sm',
-                'aria-label': demo ? '开始 Clip 录音（模拟）' : '开始 Clip RTC 录音',
-                disabled: locked || Boolean(rtcCommand) || recovering,
-                onMouseDown: keepEditorFocus, onClick: source.start,
+                'aria-label': demo ? '开始 Clip 录音（模拟）' : '开始 Clip ' + modeLabel(recordingMode) + ' 录音',
+                disabled: locked || Boolean(recordingCommand) || recovering,
+                onMouseDown: keepEditorFocus,
+                async onClick() {
+                  if (await source.start() === false) ctx.layout.selectPanel(panelId)
+                },
               }, h(IconMicrophoneOutlineRegular, { size: 18 }))))
         }
 
@@ -482,10 +510,10 @@ window.__ModuleLoader__.load({
           : h('span', {
             className: 'clip-voice-message', role: 'status', title: isFeedback ? result.text : message,
           }, !dismissible && phase !== 'paused' && h(StateDot, { state: 'ongoing' }), h('span', { className: 'clip-voice-message-text' }, message)),
-        (demo ? isRecording : task?.transport === 'rtc' && (isRecording || phase === 'paused')) && h(Button, {
+        (demo ? isRecording : task && (isRecording || phase === 'paused')) && h(Button, {
           type: 'button', className: 'clip-voice-round', size: 'sm',
-          'aria-label': demo ? '停止 Clip 录音（模拟）' : '停止 Clip RTC 录音',
-          disabled: Boolean(rtcCommand), onMouseDown: keepEditorFocus, onClick: source.stop,
+          'aria-label': demo ? '停止 Clip 录音（模拟）' : '停止 Clip ' + modeLabel(task.transport) + ' 录音',
+          disabled: Boolean(recordingCommand), onMouseDown: keepEditorFocus, onClick: source.stop,
         }, h(IconStopFillRegular, { size: 14 })),
         isFeedback && h(Button, {
           type: 'button', className: 'clip-voice-insert', size: 'sm',

@@ -29,6 +29,8 @@ async def serve(workspace: Path):
         "status": device.status,
         "startRtc": device.start_rtc,
         "stopRtc": device.stop_rtc,
+        "startSd": device.start_sd,
+        "stopSd": device.stop_sd,
         "finishRtc": device.finish_rtc,
         "downloadAndDecode": device.download,
         "latestRecording": device.latest_recording,
