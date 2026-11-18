@@ -68,8 +68,8 @@ export async function installOfficialSpeech(manager, hasSpeechService) {
   }
   const [bundles, entries] = await Promise.all([manager.listBundles(), manager.listPlugins()])
   const bundle = bundles.find(item => item.name === voiceBundle && item.official)
-  // The Clip bundle already carries both official Host modules. Enable them
-  // in place when available so there is still only one recognition registry.
+  // Reuse the current DSH installation's Host modules. Enable the existing
+  // rows in place so there is still only one recognition registry.
   const rows = speechRows.map(name => entries.find(row =>
     row.patchId === (bundle?.enabled ? name : 'clip-' + name) &&
     row.moduleName === '@deepseek-ai/dsh-experimental-' + name))

@@ -45,10 +45,6 @@
   "peerDependencies": {
     "@deepseek-ai/dsh-typert-protocol": "0.2.2-rc.1 || 0.2.2-rc.3"
   },
-  "dependencies": {
-    "@deepseek-ai/dsh-experimental-speech-to-text": "0.2.2-rc.1",
-    "@deepseek-ai/dsh-experimental-speech-to-text-sensevoice": "0.2.2-rc.1"
-  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Ant-wkp/dsh-clip-for-agent.git"

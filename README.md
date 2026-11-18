@@ -10,6 +10,8 @@
 
 运行 DSH Host 的电脑需要蓝牙适配器。Linux 还需要 BlueZ。自行运行 DSH Web 时，Node.js 需为 `24.9.0` 或更高版本。Electron 桌面版使用应用自带的运行环境。
 
+Clip 使用当前 DSH 版本随附的官方转写组件。切换 DSH 版本后，两个受支持版本可继续使用同一个 Clip 安装包。
+
 Windows CI 已验证桌面 CLI 安装和设备进程通信。Linux 已验证 Clip 面板能扫描到实机。Windows 上的实机配对和录音转写尚待验证。[Windows CI 结果](https://github.com/Ant-wkp/dsh-clip-for-agent/actions/runs/44045623536)
 
 ## 方式一：应用内「插件管理」
