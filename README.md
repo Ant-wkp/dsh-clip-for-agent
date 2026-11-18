@@ -1,5 +1,7 @@
 # Clip for DeepSeek Harness
 
+**简体中文** · [English](README.en.md)
+
 用 reSpeaker Clip 录音，DSH 在录音期间显示波形，停录后通过本机 SenseVoice 转写到聊天草稿。录音模式可在 Clip 面板选择：RTC 通过 BLE 实时接收 Opus，SD 模式先录到设备，再在停录后同步。
 
 ## 版本兼容性
@@ -18,7 +20,7 @@ Clip 面板和录音提示跟随 DSH 界面语言。可在 **设置 → 通用 �
 
 ## 方式一：应用内「插件管理」
 
-在 Web 或 Electron 桌面版打开 **插件 → 添加插件**，填写以下 GitHub 地址。npm 审核通过后，也可填写 `dsh-clip-for-agent@0.3.8`。[npm 包页面](https://www.npmjs.com/package/dsh-clip-for-agent)
+在 Web 或 Electron 桌面版打开 **插件 → 添加插件**，填写以下 GitHub 地址。也可通过 npm 安装，填写 `dsh-clip-for-agent@0.3.8`。[npm 包页面](https://www.npmjs.com/package/dsh-clip-for-agent)
 
 ```text
 git+https://github.com/Ant-wkp/dsh-clip-for-agent.git#v0.3.8
@@ -75,6 +77,8 @@ dsh plugin --profile desktop add "file:$($PWD.Path)"
 
 首次使用时，在 **Clip → 语音转写** 点击 **安装 SenseVoice 模型**，同一位置会显示下载进度。如果官方转写组件未启用，点击 **安装官方转写** 会在 Clip 面板发起安装或启用。DSH 需要重启才能加载组件时，面板会显示提示。模型缓存和官方语音插件共用。若已启用官方语音输入 bundle，Clip 复用已加载的官方服务和本地 SenseVoice。语音输入支持每段最多 120 秒，转写只写草稿，需要用户手动发送。
 
+## 架构与开发
+
 ```mermaid
 flowchart LR
     BLE[Clip RTC Opus / BLE 通知] --> PY[包内 Python 设备进程]
@@ -88,7 +92,7 @@ flowchart LR
 
 `clip` Remote 使用 DSH Gateway 的认证和状态流。Python 设备进程调用 SDK 的 `start_rtc` 和 `stream_rtc`，接收 `STREAM_START`、`STREAM_DATA` 和 `STREAM_END` 通知。停录后通过 libopus 解码为 16 kHz 单声道 PCM16 WAV，交给本机 SenseVoice。Web 端接收状态、波形和转写文本。SD 录音的下载仍使用 SDK 文件传输和 CRC32 校验。
 
-开发测试可在登录后的地址加 `?clip-demo=1`。[性能记录](PERFORMANCE.md) 的音频传输耗时对应旧版 SD 同步流程。
+开发测试可在登录后的地址加 `?clip-demo=1`。
 
 开发构建需要当前 Clip SDK 源码，以及安装 PyInstaller 和 Bleak 的 Python 环境。
 

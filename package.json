@@ -16,7 +16,7 @@
     "lib",
     "runtime",
     "cordis.patch.yml",
-    "PERFORMANCE.md"
+    "README.en.md"
   ],
   "engines": {
     "node": ">=24.9.0",
